@@ -856,9 +856,9 @@ class IsometricGridScene extends Phaser.Scene {
             btn.on('pointerdown', () => {
                 this.sounds.button.play();
                 if (opt === answer) {
-                    this.coins += 5;
+                    this.coins += 20;
                     this.scene.get('UIScene').updateCoins(this.coins);
-                    this.showMessage('Correct! +5 coins!', '#00ff00');
+                    this.showMessage('Correct! +20 coins!', '#00ff00');
                     this.sounds.correct.play();
                 } else {
                     this.showMessage('Wrong answer!', '#ff0000');
