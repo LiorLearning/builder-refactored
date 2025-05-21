@@ -58,6 +58,7 @@ class IsometricGridScene extends Phaser.Scene {
         this.load.image('edge2', 'assets/edge2.png');
         this.load.image('timmy', 'assets/timmy.png');
         this.load.image('coin', 'assets/coin.png');
+        this.load.image('shop', 'assets/shop.png');
     }
 
     create() {
@@ -231,8 +232,20 @@ class IsometricGridScene extends Phaser.Scene {
     }
 
     handleResize(gameSize) {
-        // Update grid and items after resize
-        this.updateGridAndItems();
+        // Keep toolbar anchored to top-left
+        this.toolbarContainer.setPosition(20, 20);
+        
+        // Update coin display position (keep same margin as above)
+        const coinMarginRight = 180;
+        if (this.coinText) {
+            this.coinText.setPosition(gameSize.width - coinMarginRight + 30, 30);
+        }
+
+        // Update shop icon position
+        const shopIcon = this.children.list.find(child => child.texture && child.texture.key === 'shop');
+        if (shopIcon) {
+            shopIcon.setPosition(gameSize.width - coinMarginRight - 50, 30);
+        }
     }
 
     createGrid() {
@@ -361,6 +374,53 @@ class IsometricGridScene extends Phaser.Scene {
                     return;
                 }
 
+                // Remove existing item if any
+                if (this.placedItems.has(tileKey)) {
+                    const existingItem = this.placedItems.get(tileKey);
+                    // Increment counter for the replaced item
+                    const replacedTextureKey = existingItem.textureKey;
+                    const replacedCount = this.spriteCounters.get(replacedTextureKey);
+                    this.spriteCounters.set(replacedTextureKey, replacedCount + 1);
+                    this.scene.get('UIScene').updateSpriteCounter(replacedTextureKey, replacedCount + 1);
+                    
+                    existingItem.destroy();
+                    this.placedItems.delete(tileKey);
+
+                    // If replacing with same type, we've already incremented the counter
+                    // so we don't need to decrement it again
+                    if (replacedTextureKey === this.draggedItem.textureKey) {
+                        this.textures.get(this.draggedItem.textureKey).setFilter(Phaser.Textures.FilterMode.NEAREST);
+                        const config = this.iconConfig[this.draggedItem.textureKey] || { yOffset: this.tileSize / 4, scale: 1 };
+                        const item = this.add.image(closestTile.x, closestTile.y + config.yOffset, this.draggedItem.textureKey);
+                        this.gridLayer.add(item);
+                        item.setOrigin(0.5, 1);
+                        const baseScale = (this.tileSize / item.width) * (config.scale || 1);
+                        item.setScale(baseScale * this.baseScale);
+                        item.textureKey = this.draggedItem.textureKey;
+                        
+                        // Make the item interactive for selection
+                        item.setInteractive();
+                        item.on('pointerdown', () => {
+                            if (this.selectedItem === item) {
+                                item.setTint(0xffffff);
+                                this.selectedItem = null;
+                            } else {
+                                if (this.selectedItem) {
+                                    this.selectedItem.setTint(0xffffff);
+                                }
+                                this.selectedItem = item;
+                                item.setTint(0x666666);
+                            }
+                        });
+                        
+                        this.placedItems.set(tileKey, item);
+                        this.draggedItem.destroy();
+                        this.draggedItem = null;
+                        this.gridLayer.list.sort((a, b) => a.y - b.y);
+                        return;
+                    }
+                }
+
                 // Check if we have sprites available
                 const remainingSprites = this.spriteCounters.get(this.draggedItem.textureKey);
                 if (remainingSprites <= 0) {
@@ -368,12 +428,6 @@ class IsometricGridScene extends Phaser.Scene {
                     this.draggedItem.destroy();
                     this.draggedItem = null;
                     return;
-                }
-
-                // Remove existing item if any
-                if (this.placedItems.has(tileKey)) {
-                    this.placedItems.get(tileKey).destroy();
-                    this.placedItems.delete(tileKey);
                 }
 
                 // Decrement sprite counter
@@ -682,6 +736,7 @@ class UIScene extends Phaser.Scene {
         this.toolbarExpanded = false;
         this.spriteCounters = new Map();
         this.counterTexts = new Map();
+        this.shopDialog = null;
     }
 
     init(data) {
@@ -706,6 +761,12 @@ class UIScene extends Phaser.Scene {
             stroke: '#000000',
             strokeThickness: 3
         }).setOrigin(0, 0.5);
+
+        // Add shop icon
+        const shopIcon = this.add.image(this.cameras.main.width - coinMarginRight - 50, 30, 'shop');
+        shopIcon.setScale(0.1);
+        shopIcon.setInteractive({ useHandCursor: true });
+        shopIcon.on('pointerdown', () => this.showShopDialog());
 
         // Handle window resize
         this.scale.on('resize', this.handleResize, this);
@@ -891,5 +952,129 @@ class UIScene extends Phaser.Scene {
         if (this.coinText) {
             this.coinText.setPosition(gameSize.width - coinMarginRight + 30, 30);
         }
+
+        // Update shop icon position
+        const shopIcon = this.children.list.find(child => child.texture && child.texture.key === 'shop');
+        if (shopIcon) {
+            shopIcon.setPosition(gameSize.width - coinMarginRight - 50, 30);
+        }
+    }
+
+    showMessage(text, color) {
+        const message = this.add.text(this.cameras.main.width / 2, this.cameras.main.height / 2 + 200, text, {
+            fontSize: '24px',
+            color: color,
+            fontStyle: 'bold',
+            stroke: '#000000',
+            strokeThickness: 3
+        }).setOrigin(0.5);
+
+        this.time.delayedCall(2000, () => {
+            message.destroy();
+        });
+    }
+
+    showShopDialog() {
+        // Remove existing dialog if any
+        if (this.shopDialog) {
+            this.shopDialog.destroy();
+        }
+
+        // Dialog dimensions
+        const dialogWidth = 400;
+        const dialogHeight = 500;
+        const dialogX = this.cameras.main.width / 2 - dialogWidth / 2;
+        const dialogY = this.cameras.main.height / 2 - dialogHeight / 2;
+
+        // Create dialog background
+        const dialogBg = this.add.graphics();
+        dialogBg.fillStyle(0x000000, 0.8);
+        dialogBg.fillRoundedRect(0, 0, dialogWidth, dialogHeight, 16);
+        dialogBg.setPosition(dialogX, dialogY);
+
+        // Create dialog container
+        this.shopDialog = this.add.container(0, 0);
+        this.shopDialog.add(dialogBg);
+
+        // Add title
+        const title = this.add.text(this.cameras.main.width / 2, dialogY + 20, 'Shop', {
+            fontSize: '32px',
+            color: '#ffffff',
+            fontStyle: 'bold',
+            fontFamily: 'Fredoka One',
+        }).setOrigin(0.5, 0);
+        this.shopDialog.add(title);
+
+        // Add close button
+        const closeBtn = this.add.text(dialogX + dialogWidth - 24, dialogY + 24, 'X', {
+            fontSize: '24px',
+            color: '#ffffff',
+            fontStyle: 'bold'
+        }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+        closeBtn.on('pointerdown', () => this.shopDialog.destroy());
+        this.shopDialog.add(closeBtn);
+
+        // Shop items grid
+        const iconKeys = ['tree', 'grass', 'grass1', 'flower', 'flower2', 'fence', 'fence2', 'fencecorner', 'fencecorner2', 'edge1', 'edge2', 'timmy'];
+        const itemsPerRow = 4;
+        const itemCellWidth = 85;
+        const itemCellHeight = 110;
+        const gridWidth = itemsPerRow * itemCellWidth;
+        const numRows = Math.ceil(iconKeys.length / itemsPerRow);
+        const gridHeight = numRows * itemCellHeight;
+        const gridStartX = this.cameras.main.width / 2 - gridWidth / 2;
+        const gridStartY = dialogY + 70;
+
+        iconKeys.forEach((key, index) => {
+            const row = Math.floor(index / itemsPerRow);
+            const col = index % itemsPerRow;
+            const x = gridStartX + col * itemCellWidth + itemCellWidth / 2;
+            const y = gridStartY + row * itemCellHeight;
+
+            // Create item container
+            const itemContainer = this.add.container(x, y);
+            this.shopDialog.add(itemContainer);
+
+            // Add item icon
+            const itemIcon = this.add.image(0, 0, key);
+            const scale = (this.tileSize / itemIcon.width) * (this.iconConfig[key].scale || 1) * 0.7;
+            itemIcon.setScale(scale);
+            itemContainer.add(itemIcon);
+
+            // Add price text
+            const priceText = this.add.text(0, 38, '5 coins', {
+                fontSize: '16px',
+                color: '#ffffff',
+                fontStyle: 'bold'
+            }).setOrigin(0.5);
+            itemContainer.add(priceText);
+
+            // Add buy button
+            const buyBtn = this.add.text(0, 62, 'Buy', {
+                fontSize: '16px',
+                color: '#ffffff',
+                backgroundColor: '#4a4a4a',
+                padding: { x: 10, y: 5 }
+            }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+
+            buyBtn.on('pointerdown', () => {
+                if (this.coins >= 5) {
+                    // Update coins
+                    this.coins -= 5;
+                    this.updateCoins(this.coins);
+
+                    // Update sprite counter
+                    const currentCount = this.parentScene.spriteCounters.get(key);
+                    this.parentScene.spriteCounters.set(key, currentCount + 1);
+                    this.updateSpriteCounter(key, currentCount + 1);
+
+                    // Show success message
+                    this.showMessage('Purchase successful!', '#00ff00');
+                } else {
+                    this.showMessage('Not enough coins!', '#ff0000');
+                }
+            });
+            itemContainer.add(buyBtn);
+        });
     }
 } 
