@@ -28,6 +28,7 @@ class IsometricGridScene extends Phaser.Scene {
             pop: null,
             shop: null
         };
+        this.isMuted = false; // Track mute state
         // Icon configuration for yOffset and scale
         this.iconConfig = {
             tree:   { yOffset: this.tileSize / 4,      scale: 1.2 },
@@ -51,8 +52,8 @@ class IsometricGridScene extends Phaser.Scene {
             fence: 1,
             fence2: 1,
             fencecorner: 1,
-            mystical1: 1,
-            mystical2: 1
+            mystical1: 0,
+            mystical2: 0
         };
         // Configuration for shop prices
         this.spritePrices = {
@@ -271,11 +272,43 @@ class IsometricGridScene extends Phaser.Scene {
             this.resetZoomAndPosition();
         });
 
+        // Create mute button below reset button
+        const muteBtnY = btnY + buttonSize + 10; // 10 pixels below reset button
+        this.muteButton = this.add.container(btnX, muteBtnY);
+        this.muteButton.setDepth(2000);
+
+        // Mute button background
+        const muteBg = this.add.graphics();
+        muteBg.fillStyle(0x444444, 1);
+        muteBg.lineStyle(2, 0xffffff, 0.8);
+        muteBg.fillCircle(0, 0, buttonSize / 2);
+        muteBg.strokeCircle(0, 0, buttonSize / 2);
+        this.muteButton.add(muteBg);
+
+        // Mute button text
+        const muteTxt = this.add.text(0, 0, '🔊', {
+            fontSize: '24px',
+            color: '#fff',
+            fontStyle: 'bold',
+        }).setOrigin(0.5);
+        this.muteButton.add(muteTxt);
+
+        // Make mute button interactive
+        muteBg.setInteractive(new Phaser.Geom.Circle(0, 0, buttonSize / 2), Phaser.Geom.Circle.Contains);
+        muteBg.on('pointerdown', () => {
+            this.toggleMute();
+            muteTxt.setText(this.isMuted ? '🔇' : '🔊');
+        });
+
         // Adjust position on resize
         this.scale.on('resize', (gameSize) => {
             this.resetZoomButton.setPosition(
                 gameSize.width - buttonSize / 2 - margin,
                 buttonSize / 2 + margin
+            );
+            this.muteButton.setPosition(
+                gameSize.width - buttonSize / 2 - margin,
+                buttonSize / 2 + margin + buttonSize + 10
             );
         });
     }
@@ -747,10 +780,16 @@ class IsometricGridScene extends Phaser.Scene {
 
     showQuizDialog() {
         // Generate random numbers for the quiz
-        const num1 = Phaser.Math.Between(1, 20);
-        const num2 = Phaser.Math.Between(1, 20);
+        const num1 = Phaser.Math.Between(1, 25); // First number between 1-25
+        const num2 = Phaser.Math.Between(1, 25); // Second number between 1-25
         const operation = Phaser.Math.RND.pick(['+', '-']);
         const answer = operation === '+' ? num1 + num2 : num1 - num2;
+
+        // Ensure answer is positive and under 50
+        if (answer < 0 || answer > 50) {
+            // If answer is invalid, regenerate the quiz
+            return this.showQuizDialog();
+        }
 
         // Generate 3 random distractors
         const options = new Set([answer]);
@@ -758,8 +797,10 @@ class IsometricGridScene extends Phaser.Scene {
             let delta = Phaser.Math.Between(-10, 10);
             if (delta === 0) delta = 1;
             let distractor = answer + delta;
-            if (operation === '-' && distractor < 0) distractor = Math.abs(distractor);
-            options.add(distractor);
+            // Only add distractor if it's positive and under 50
+            if (distractor > 0 && distractor < 50) {
+                options.add(distractor);
+            }
         }
         const shuffledOptions = Phaser.Utils.Array.Shuffle(Array.from(options));
 
@@ -1106,6 +1147,16 @@ class IsometricGridScene extends Phaser.Scene {
             });
             itemContainer.add(buyBtn);
         });
+    }
+
+    toggleMute() {
+        this.isMuted = !this.isMuted;
+        const volume = this.isMuted ? 0 : 0.5;
+        this.sounds.bgm.setVolume(volume);
+        this.sounds.button.setVolume(this.isMuted ? 0 : 0.7);
+        this.sounds.correct.setVolume(this.isMuted ? 0 : 0.7);
+        this.sounds.pop.setVolume(this.isMuted ? 0 : 0.7);
+        this.sounds.shop.setVolume(this.isMuted ? 0 : 0.7);
     }
 }
 
