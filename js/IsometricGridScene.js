@@ -18,6 +18,16 @@ class IsometricGridScene extends Phaser.Scene {
         this.devModeTimeout = null; // Timeout for key sequence reset
         this.tileStates = new Map(); // Map to store tile states
         this.coins = 0; // Track number of coins
+        this.firstZeroAssetShown = false; // Track if first zero asset message has been shown
+        this.welcomeMessageShown = false; // Track if welcome message has been shown
+        // Audio instances
+        this.sounds = {
+            bgm: null,
+            button: null,
+            correct: null,
+            pop: null,
+            shop: null
+        };
         // Icon configuration for yOffset and scale
         this.iconConfig = {
             tree:   { yOffset: this.tileSize / 4,      scale: 1.2 },
@@ -28,18 +38,42 @@ class IsometricGridScene extends Phaser.Scene {
             fence:  { yOffset: this.tileSize / 4 + 10,  scale: 1},
             fence2: { yOffset: this.tileSize / 4 + 10,  scale: 1},
             fencecorner: { yOffset: this.tileSize / 4 + 10,  scale: 1},
-            fencecorner2: { yOffset: this.tileSize / 4 + 10,  scale: 1},
-            edge1: { yOffset: this.tileSize / 4 + 10,  scale: 1},
-            edge2: { yOffset: this.tileSize / 4 + 10,  scale: 1},
-            timmy: { yOffset: this.tileSize / 4 + 5,  scale: 1.2},
+            mystical1: { yOffset: this.tileSize / 4 + 5, scale: 1.2 },
+            mystical2: { yOffset: this.tileSize / 4 + 5, scale: 1.2 }
+        };
+        // Configuration for initial sprite counts
+        this.spriteInitialCounts = {
+            tree: 1,
+            grass: 1,
+            grass1: 1,
+            flower: 1,
+            flower2: 1,
+            fence: 1,
+            fence2: 1,
+            fencecorner: 1,
+            mystical1: 1,
+            mystical2: 1
+        };
+        // Configuration for shop prices
+        this.spritePrices = {
+            tree: 5,
+            grass: 3,
+            grass1: 3,
+            flower: 4,
+            flower2: 4,
+            fence: 6,
+            fence2: 6,
+            fencecorner: 6,
+            mystical1: 10,
+            mystical2: 10
         };
         this.toolbarExpanded = false; // Start closed
         
         // Initialize sprite counters for each icon type
         this.spriteCounters = new Map();
-        const iconKeys = ['tree', 'grass', 'grass1', 'flower', 'flower2', 'fence', 'fence2', 'fencecorner', 'fencecorner2', 'edge1', 'edge2', 'timmy'];
+        const iconKeys = ['tree', 'grass', 'grass1', 'flower', 'flower2', 'fence', 'fence2', 'fencecorner', 'mystical1', 'mystical2'];
         iconKeys.forEach(key => {
-            this.spriteCounters.set(key, 3); // Start with 3 sprites for each type
+            this.spriteCounters.set(key, this.spriteInitialCounts[key]); // Use individual initial counts
         });
     }
 
@@ -53,15 +87,30 @@ class IsometricGridScene extends Phaser.Scene {
         this.load.image('fence', 'assets/fence.png');
         this.load.image('fence2', 'assets/fence2.png');
         this.load.image('fencecorner', 'assets/fencecorner.png');
-        this.load.image('fencecorner2', 'assets/fencecorner2.png');
-        this.load.image('edge1', 'assets/edge1.png');
-        this.load.image('edge2', 'assets/edge2.png');
-        this.load.image('timmy', 'assets/timmy.png');
+        this.load.image('mystical1', 'assets/mystical1.png');
+        this.load.image('mystical2', 'assets/mystical2.png');
         this.load.image('coin', 'assets/coin.png');
         this.load.image('shop', 'assets/shop.png');
+        this.load.image('pixie', 'assets/pixie.png');
+        // Load audio files
+        this.load.audio('bgm', 'assets/audio/bgm.mp3');
+        this.load.audio('button', 'assets/audio/button.mp3');
+        this.load.audio('correct', 'assets/audio/correct.mp3');
+        this.load.audio('pop', 'assets/audio/pop.mp3');
+        this.load.audio('shop', 'assets/audio/shop.mp3');
     }
 
     create() {
+        // Initialize audio
+        this.sounds.bgm = this.sound.add('bgm', { loop: true, volume: 0.5 });
+        this.sounds.button = this.sound.add('button', { volume: 0.7 });
+        this.sounds.correct = this.sound.add('correct', { volume: 0.7 });
+        this.sounds.pop = this.sound.add('pop', { volume: 0.7 });
+        this.sounds.shop = this.sound.add('shop', { volume: 0.7 });
+
+        // Start background music
+        this.sounds.bgm.play();
+
         // Create grid layer
         this.gridLayer = this.add.container(0, 0); // Use a container for all grid content
         
@@ -71,6 +120,11 @@ class IsometricGridScene extends Phaser.Scene {
         bg.setDisplaySize(this.cameras.main.width, this.cameras.main.height);
         bg.setDepth(-1000);
         this.gridLayer.add(bg);
+
+        // Add pixie image to bottom left corner
+        this.pixieImage = this.add.image(100, this.cameras.main.height - 150, 'pixie');
+        this.pixieImage.setScale(1); // Increased scale for better visibility
+        this.pixieImage.setDepth(2000); // Ensure it's above other elements
 
         // Load restricted tiles before creating the grid
         this.loadRestrictedTiles().then(() => {
@@ -95,6 +149,9 @@ class IsometricGridScene extends Phaser.Scene {
             this.input.keyboard.on('keydown-SPACE', () => {
                 this.showQuizDialog();
             });
+
+            // Show welcome message
+            this.showWelcomeMessage();
 
             // Add wheel event listener for zoom
             this.input.on('wheel', (pointer, gameObjects, deltaX, deltaY, deltaZ) => {
@@ -232,9 +289,6 @@ class IsometricGridScene extends Phaser.Scene {
     }
 
     handleResize(gameSize) {
-        // Keep toolbar anchored to top-left
-        this.toolbarContainer.setPosition(20, 20);
-        
         // Update coin display position (keep same margin as above)
         const coinMarginRight = 180;
         if (this.coinText) {
@@ -245,6 +299,11 @@ class IsometricGridScene extends Phaser.Scene {
         const shopIcon = this.children.list.find(child => child.texture && child.texture.key === 'shop');
         if (shopIcon) {
             shopIcon.setPosition(gameSize.width - coinMarginRight - 50, 30);
+        }
+
+        // Update pixie position
+        if (this.pixieImage) {
+            this.pixieImage.setPosition(100, gameSize.height - 150);
         }
     }
 
@@ -417,6 +476,32 @@ class IsometricGridScene extends Phaser.Scene {
                         this.draggedItem.destroy();
                         this.draggedItem = null;
                         this.gridLayer.list.sort((a, b) => a.y - b.y);
+
+                        // Update welcome message if it exists
+                        if (this.welcomeChatbox) {
+                            // Find the message text in the chatbox
+                            const messageText = this.welcomeChatbox.getAt(1); // The text is the second element added to the container
+                            if (messageText) {
+                                messageText.setText("Now create your own garden!");
+                                
+                                // Add new glow effect
+                                const x = 200;
+                                const y = this.cameras.main.height - 250;
+                                const width = 400;
+                                const height = 150;
+                                
+                                // Clean up old glow if it exists
+                                if (this.welcomeChatbox.glow) {
+                                    this.welcomeChatbox.glow.destroy();
+                                    if (this.welcomeChatbox.glowEvent) {
+                                        this.welcomeChatbox.glowEvent.remove();
+                                    }
+                                }
+                                
+                                // Add new glow
+                                this.addChatboxGlow(this.welcomeChatbox, x, y, width, height);
+                            }
+                        }
                         return;
                     }
                 }
@@ -427,6 +512,12 @@ class IsometricGridScene extends Phaser.Scene {
                     console.log('No more sprites available for this type');
                     this.draggedItem.destroy();
                     this.draggedItem = null;
+                    
+                    // Show first zero asset message if not shown before
+                    if (!this.firstZeroAssetShown) {
+                        this.showFirstZeroAssetMessage();
+                        this.firstZeroAssetShown = true;
+                    }
                     return;
                 }
 
@@ -449,6 +540,9 @@ class IsometricGridScene extends Phaser.Scene {
                 item.textureKey = this.draggedItem.textureKey;
                 console.log('Placed item textureKey:', item.textureKey);
                 
+                // Play pop sound when item is placed
+                this.sounds.pop.play();
+                
                 // Make the item interactive for selection
                 item.setInteractive();
                 item.on('pointerdown', () => {
@@ -468,6 +562,32 @@ class IsometricGridScene extends Phaser.Scene {
                 });
                 
                 this.placedItems.set(tileKey, item);
+
+                // Update welcome message if it exists
+                if (this.welcomeChatbox) {
+                    // Find the message text in the chatbox
+                    const messageText = this.welcomeChatbox.getAt(1); // The text is the second element added to the container
+                    if (messageText) {
+                        messageText.setText("Now create your own garden!");
+                        
+                        // Add new glow effect
+                        const x = 200;
+                        const y = this.cameras.main.height - 250;
+                        const width = 400;
+                        const height = 150;
+                        
+                        // Clean up old glow if it exists
+                        if (this.welcomeChatbox.glow) {
+                            this.welcomeChatbox.glow.destroy();
+                            if (this.welcomeChatbox.glowEvent) {
+                                this.welcomeChatbox.glowEvent.remove();
+                            }
+                        }
+                        
+                        // Add new glow
+                        this.addChatboxGlow(this.welcomeChatbox, x, y, width, height);
+                    }
+                }
             }
             this.draggedItem.destroy();
             this.draggedItem = null;
@@ -693,10 +813,12 @@ class IsometricGridScene extends Phaser.Scene {
                 }
             ).setOrigin(0.5).setInteractive({ useHandCursor: true });
             btn.on('pointerdown', () => {
+                this.sounds.button.play();
                 if (opt === answer) {
                     this.coins += 5;
                     this.scene.get('UIScene').updateCoins(this.coins);
                     this.showMessage('Correct! +5 coins!', '#00ff00');
+                    this.sounds.correct.play();
                 } else {
                     this.showMessage('Wrong answer!', '#ff0000');
                 }
@@ -725,6 +847,266 @@ class IsometricGridScene extends Phaser.Scene {
             message.destroy();
         });
     }
+
+    showWelcomeMessage() {
+        // Create chatbox container
+        this.welcomeChatbox = this.add.container(0, 0);
+        this.welcomeChatbox.setDepth(2000);
+
+        // Chatbox dimensions and position
+        const width = 400;
+        const height = 150;
+        const x = 200; // Position near pixie
+        const y = this.cameras.main.height - 250;
+
+        // Create chatbox background
+        const bg = this.add.graphics();
+        bg.fillStyle(0x000000, 0.8);
+        bg.fillRoundedRect(x, y, width, height, 16);
+        bg.lineStyle(2, 0xffffff, 0.8);
+        bg.strokeRoundedRect(x, y, width, height, 16);
+        this.welcomeChatbox.add(bg);
+
+        // Add message text
+        const message = this.add.text(x + width/2, y + height/2, 
+            "Drag and drop an item\nto the ground", {
+            fontSize: '20px',
+            color: '#ffffff',
+            fontStyle: 'bold',
+            align: 'center'
+        }).setOrigin(0.5);
+        this.welcomeChatbox.add(message);
+
+        // Add close button
+        const closeBtn = this.add.text(x + width - 20, y + 20, 'X', {
+            fontSize: '24px',
+            color: '#ffffff',
+            fontStyle: 'bold'
+        }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+        
+        closeBtn.on('pointerdown', () => {
+            this.welcomeChatbox.destroy();
+        });
+        this.welcomeChatbox.add(closeBtn);
+
+        // Add initial glow effect
+        this.addChatboxGlow(this.welcomeChatbox, x, y, width, height);
+    }
+
+    addChatboxGlow(chatbox, x, y, width, height) {
+        // Create glow graphics
+        const glow = this.add.graphics();
+        glow.setDepth(1999); // Just below the chatbox
+        
+        // Initial glow state
+        let alpha = 1;
+        let growing = false;
+        
+        // Animation function
+        const updateGlow = () => {
+            glow.clear();
+            
+            // Update alpha
+            if (growing) {
+                alpha += 0.05;
+                if (alpha >= 1) {
+                    alpha = 1;
+                    growing = false;
+                }
+            } else {
+                alpha -= 0.05;
+                if (alpha <= 0.3) {
+                    alpha = 0.3;
+                    growing = true;
+                }
+            }
+            
+            // Draw glow
+            glow.lineStyle(4, 0xffff00, alpha);
+            glow.strokeRoundedRect(x - 2, y - 2, width + 4, height + 4, 18);
+        };
+        
+        // Start the animation
+        this.time.addEvent({
+            delay: 50,
+            callback: updateGlow,
+            callbackScope: this,
+            loop: true
+        });
+        
+        // Store the glow and animation event for cleanup
+        chatbox.glow = glow;
+        chatbox.glowEvent = this.time.addEvent({
+            delay: 3000, // Stop glow after 3 seconds
+            callback: () => {
+                glow.destroy();
+                chatbox.glow = null;
+            }
+        });
+    }
+
+    showFirstZeroAssetMessage() {
+        console.log('Creating chatbox');
+        // Create chatbox container
+        const chatbox = this.add.container(0, 0);
+        chatbox.setDepth(2000);
+
+        // Chatbox dimensions and position
+        const width = 400;
+        const height = 150;
+        const x = 200; // Position near pixie
+        const y = this.cameras.main.height - 250;
+
+        console.log('Chatbox position:', x, y);
+
+        // Create chatbox background
+        const bg = this.add.graphics();
+        bg.fillStyle(0x000000, 0.8);
+        bg.fillRoundedRect(x, y, width, height, 16);
+        bg.lineStyle(2, 0xffffff, 0.8);
+        bg.strokeRoundedRect(x, y, width, height, 16);
+        chatbox.add(bg);
+
+        // Add message text
+        const message = this.add.text(x + width/2, y + height/2, 
+            "Press Spacebar to collect coins\nand buy more assets", {
+            fontSize: '20px',
+            color: '#ffffff',
+            fontStyle: 'bold',
+            align: 'center'
+        }).setOrigin(0.5);
+        chatbox.add(message);
+
+        // Add close button
+        const closeBtn = this.add.text(x + width - 20, y + 20, 'X', {
+            fontSize: '24px',
+            color: '#ffffff',
+            fontStyle: 'bold'
+        }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+        
+        closeBtn.on('pointerdown', () => {
+            console.log('Closing chatbox');
+            chatbox.destroy();
+        });
+        chatbox.add(closeBtn);
+
+        // Auto-destroy after 10 seconds
+        this.time.delayedCall(10000, () => {
+            if (chatbox.active) {
+                console.log('Auto-destroying chatbox');
+                chatbox.destroy();
+            }
+        });
+    }
+
+    showShopDialog() {
+        // Remove existing dialog if any
+        if (this.shopDialog) {
+            this.shopDialog.destroy();
+        }
+
+        // Dialog dimensions
+        const dialogWidth = 400;
+        const dialogHeight = 500;
+        const dialogX = this.cameras.main.width / 2 - dialogWidth / 2;
+        const dialogY = this.cameras.main.height / 2 - dialogHeight / 2;
+
+        // Create dialog background
+        const dialogBg = this.add.graphics();
+        dialogBg.fillStyle(0x000000, 0.8);
+        dialogBg.fillRoundedRect(0, 0, dialogWidth, dialogHeight, 16);
+        dialogBg.setPosition(dialogX, dialogY);
+
+        // Create dialog container
+        this.shopDialog = this.add.container(0, 0);
+        this.shopDialog.add(dialogBg);
+
+        // Add title
+        const title = this.add.text(this.cameras.main.width / 2, dialogY + 20, 'Shop', {
+            fontSize: '32px',
+            color: '#ffffff',
+            fontStyle: 'bold',
+            fontFamily: 'Fredoka One',
+        }).setOrigin(0.5, 0);
+        this.shopDialog.add(title);
+
+        // Add close button
+        const closeBtn = this.add.text(dialogX + dialogWidth - 24, dialogY + 24, 'X', {
+            fontSize: '24px',
+            color: '#ffffff',
+            fontStyle: 'bold'
+        }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+        closeBtn.on('pointerdown', () => this.shopDialog.destroy());
+        this.shopDialog.add(closeBtn);
+
+        // Shop items grid
+        const iconKeys = ['tree', 'grass', 'grass1', 'flower', 'flower2', 'fence', 'fence2', 'fencecorner', 'mystical1', 'mystical2'];
+        const itemsPerRow = 4;
+        const itemCellWidth = 85;
+        const itemCellHeight = 110;
+        const gridWidth = itemsPerRow * itemCellWidth;
+        const numRows = Math.ceil(iconKeys.length / itemsPerRow);
+        const gridHeight = numRows * itemCellHeight;
+        const gridStartX = this.cameras.main.width / 2 - gridWidth / 2;
+        const gridStartY = dialogY + 70;
+
+        iconKeys.forEach((key, index) => {
+            const row = Math.floor(index / itemsPerRow);
+            const col = index % itemsPerRow;
+            const x = gridStartX + col * itemCellWidth + itemCellWidth / 2;
+            const y = gridStartY + row * itemCellHeight;
+
+            // Create item container
+            const itemContainer = this.add.container(x, y);
+            this.shopDialog.add(itemContainer);
+
+            // Add item icon
+            const itemIcon = this.add.image(0, 0, key);
+            const scale = (this.tileSize / itemIcon.width) * (this.iconConfig[key].scale || 1) * 0.7;
+            itemIcon.setScale(scale);
+            itemContainer.add(itemIcon);
+
+            // Add price text
+            const price = this.spritePrices[key];
+            const priceText = this.add.text(0, 38, `${price} coins`, {
+                fontSize: '16px',
+                color: '#ffffff',
+                fontStyle: 'bold'
+            }).setOrigin(0.5);
+            itemContainer.add(priceText);
+
+            // Add buy button
+            const buyBtn = this.add.text(0, 62, 'Buy', {
+                fontSize: '16px',
+                color: '#ffffff',
+                backgroundColor: '#4a4a4a',
+                padding: { x: 10, y: 5 }
+            }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+
+            buyBtn.on('pointerdown', () => {
+                this.sounds.button.play();
+                if (this.coins >= price) {
+                    // Update coins
+                    this.coins -= price;
+                    this.updateCoins(this.coins);
+
+                    // Update sprite counter
+                    const currentCount = this.spriteCounters.get(key);
+                    this.spriteCounters.set(key, currentCount + 1);
+                    this.updateSpriteCounter(key, currentCount + 1);
+
+                    // Play shop sound
+                    this.sounds.shop.play();
+
+                    // Show success message
+                    this.showMessage('Purchase successful!', '#00ff00');
+                } else {
+                    this.showMessage('Not enough coins!', '#ff0000');
+                }
+            });
+            itemContainer.add(buyBtn);
+        });
+    }
 }
 
 class UIScene extends Phaser.Scene {
@@ -733,10 +1115,12 @@ class UIScene extends Phaser.Scene {
         this.parentScene = null;
         this.tileSize = 64;
         this.iconConfig = null;
-        this.toolbarExpanded = false;
+        this.toolbarExpanded = true; // Start with toolbar open
         this.spriteCounters = new Map();
         this.counterTexts = new Map();
         this.shopDialog = null;
+        this.firstZeroAssetShown = false; // Track if first zero asset message has been shown
+        this.toggleBtnText = null; // Store reference to toggle button text
     }
 
     init(data) {
@@ -764,7 +1148,7 @@ class UIScene extends Phaser.Scene {
 
         // Add shop icon
         const shopIcon = this.add.image(this.cameras.main.width - coinMarginRight - 50, 30, 'shop');
-        shopIcon.setScale(0.1);
+        shopIcon.setScale(0.15);
         shopIcon.setInteractive({ useHandCursor: true });
         shopIcon.on('pointerdown', () => this.showShopDialog());
 
@@ -774,7 +1158,7 @@ class UIScene extends Phaser.Scene {
 
     createToolbarPanel() {
         // Icon setup
-        const iconKeys = ['tree', 'grass', 'grass1', 'flower', 'flower2', 'fence', 'fence2', 'fencecorner', 'fencecorner2', 'edge1', 'edge2', 'timmy'];
+        const iconKeys = ['tree', 'grass', 'grass1', 'flower', 'flower2', 'fence', 'fence2', 'fencecorner', 'mystical1', 'mystical2'];
         const iconSpacing = this.tileSize + 10;
         const iconMargin = 16;
         const panelPadding = 12;
@@ -806,13 +1190,13 @@ class UIScene extends Phaser.Scene {
         toggleBtnBg.strokeCircle(btnX, btnY, btnRadius);
         this.toolbarContainer.add(toggleBtnBg);
 
-        const toggleBtnText = this.add.text(btnX, btnY, '+', {
+        this.toggleBtnText = this.add.text(btnX, btnY, this.toolbarExpanded ? '−' : '+', {
             fontSize: '22px',
             color: '#fff',
             fontStyle: 'bold',
         }).setOrigin(0.5);
-        toggleBtnText.setInteractive({ useHandCursor: true });
-        this.toolbarContainer.add(toggleBtnText);
+        this.toggleBtnText.setInteractive({ useHandCursor: true });
+        this.toolbarContainer.add(this.toggleBtnText);
 
         // Icons container
         this.iconsContainer = this.add.container(iconMargin, btnRadius * 2 + 8 + panelPadding);
@@ -844,10 +1228,18 @@ class UIScene extends Phaser.Scene {
             icon.setInteractive();
             this.input.setDraggable(icon);
             icon.textureKey = key;
+            
+            // Set initial alpha based on sprite count
+            const initialCount = this.parentScene.spriteCounters.get(key);
+            if (initialCount <= 0) {
+                icon.setAlpha(0.5);
+                icon.disableInteractive();
+            }
+            
             iconContainer.add(icon);
             
             // Create counter text
-            const counterText = this.add.text(0, -this.tileSize/2, '3', {
+            const counterText = this.add.text(0, -this.tileSize/2, this.parentScene.spriteCounters.get(key).toString(), {
                 fontSize: '16px',
                 color: '#ffffff',
                 fontStyle: 'bold',
@@ -890,9 +1282,10 @@ class UIScene extends Phaser.Scene {
         });
 
         // Toggle button click handler
-        toggleBtnText.on('pointerdown', () => {
+        this.toggleBtnText.on('pointerdown', () => {
+            this.parentScene.sounds.button.play();
             this.toolbarExpanded = !this.toolbarExpanded;
-            toggleBtnText.setText(this.toolbarExpanded ? '−' : '+');
+            this.toggleBtnText.setText(this.toolbarExpanded ? '−' : '+');
             this.tweens.add({
                 targets: [this.iconsContainer, this.panelBg],
                 alpha: this.toolbarExpanded ? 1 : 0,
@@ -915,7 +1308,7 @@ class UIScene extends Phaser.Scene {
 
         // Ensure toggle button is on top
         this.toolbarContainer.bringToTop(toggleBtnBg);
-        this.toolbarContainer.bringToTop(toggleBtnText);
+        this.toolbarContainer.bringToTop(this.toggleBtnText);
     }
 
     updateSpriteCounter(textureKey, newCount) {
@@ -929,10 +1322,17 @@ class UIScene extends Phaser.Scene {
                 if (newCount <= 0) {
                     icon.setAlpha(0.5); // Make icon translucent when no sprites left
                     icon.disableInteractive(); // Disable dragging
+                    this.input.setDraggable(icon, false); // Ensure dragging is disabled
+                    
+                    // Show first zero asset message if not shown before
+                    if (!this.firstZeroAssetShown) {
+                        this.showFirstZeroAssetMessage();
+                        this.firstZeroAssetShown = true;
+                    }
                 } else {
                     icon.setAlpha(1);
                     icon.setInteractive();
-                    this.input.setDraggable(icon);
+                    this.input.setDraggable(icon, true);
                 }
             }
         }
@@ -944,9 +1344,6 @@ class UIScene extends Phaser.Scene {
     }
 
     handleResize(gameSize) {
-        // Keep toolbar anchored to top-left
-        this.toolbarContainer.setPosition(20, 20);
-        
         // Update coin display position (keep same margin as above)
         const coinMarginRight = 180;
         if (this.coinText) {
@@ -957,6 +1354,11 @@ class UIScene extends Phaser.Scene {
         const shopIcon = this.children.list.find(child => child.texture && child.texture.key === 'shop');
         if (shopIcon) {
             shopIcon.setPosition(gameSize.width - coinMarginRight - 50, 30);
+        }
+
+        // Update pixie position
+        if (this.pixieImage) {
+            this.pixieImage.setPosition(100, gameSize.height - 150);
         }
     }
 
@@ -1015,7 +1417,7 @@ class UIScene extends Phaser.Scene {
         this.shopDialog.add(closeBtn);
 
         // Shop items grid
-        const iconKeys = ['tree', 'grass', 'grass1', 'flower', 'flower2', 'fence', 'fence2', 'fencecorner', 'fencecorner2', 'edge1', 'edge2', 'timmy'];
+        const iconKeys = ['tree', 'grass', 'grass1', 'flower', 'flower2', 'fence', 'fence2', 'fencecorner', 'mystical1', 'mystical2'];
         const itemsPerRow = 4;
         const itemCellWidth = 85;
         const itemCellHeight = 110;
@@ -1042,7 +1444,8 @@ class UIScene extends Phaser.Scene {
             itemContainer.add(itemIcon);
 
             // Add price text
-            const priceText = this.add.text(0, 38, '5 coins', {
+            const price = this.parentScene.spritePrices[key];
+            const priceText = this.add.text(0, 38, `${price} coins`, {
                 fontSize: '16px',
                 color: '#ffffff',
                 fontStyle: 'bold'
@@ -1058,15 +1461,19 @@ class UIScene extends Phaser.Scene {
             }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
             buyBtn.on('pointerdown', () => {
-                if (this.coins >= 5) {
+                this.parentScene.sounds.button.play();
+                if (this.coins >= price) {
                     // Update coins
-                    this.coins -= 5;
+                    this.coins -= price;
                     this.updateCoins(this.coins);
 
                     // Update sprite counter
                     const currentCount = this.parentScene.spriteCounters.get(key);
                     this.parentScene.spriteCounters.set(key, currentCount + 1);
                     this.updateSpriteCounter(key, currentCount + 1);
+
+                    // Play shop sound
+                    this.parentScene.sounds.shop.play();
 
                     // Show success message
                     this.showMessage('Purchase successful!', '#00ff00');
@@ -1075,6 +1482,60 @@ class UIScene extends Phaser.Scene {
                 }
             });
             itemContainer.add(buyBtn);
+        });
+    }
+
+    showFirstZeroAssetMessage() {
+        console.log('Creating chatbox');
+        // Create chatbox container
+        const chatbox = this.add.container(0, 0);
+        chatbox.setDepth(2000);
+
+        // Chatbox dimensions and position
+        const width = 400;
+        const height = 150;
+        const x = 200; // Position near pixie
+        const y = this.cameras.main.height - 250;
+
+        console.log('Chatbox position:', x, y);
+
+        // Create chatbox background
+        const bg = this.add.graphics();
+        bg.fillStyle(0x000000, 0.8);
+        bg.fillRoundedRect(x, y, width, height, 16);
+        bg.lineStyle(2, 0xffffff, 0.8);
+        bg.strokeRoundedRect(x, y, width, height, 16);
+        chatbox.add(bg);
+
+        // Add message text
+        const message = this.add.text(x + width/2, y + height/2, 
+            "Press Spacebar to collect coins\nand buy more assets", {
+            fontSize: '20px',
+            color: '#ffffff',
+            fontStyle: 'bold',
+            align: 'center'
+        }).setOrigin(0.5);
+        chatbox.add(message);
+
+        // Add close button
+        const closeBtn = this.add.text(x + width - 20, y + 20, 'X', {
+            fontSize: '24px',
+            color: '#ffffff',
+            fontStyle: 'bold'
+        }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+        
+        closeBtn.on('pointerdown', () => {
+            console.log('Closing chatbox');
+            chatbox.destroy();
+        });
+        chatbox.add(closeBtn);
+
+        // Auto-destroy after 10 seconds
+        this.time.delayedCall(10000, () => {
+            if (chatbox.active) {
+                console.log('Auto-destroying chatbox');
+                chatbox.destroy();
+            }
         });
     }
 } 
