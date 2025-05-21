@@ -780,41 +780,50 @@ class IsometricGridScene extends Phaser.Scene {
 
     showQuizDialog() {
         // Generate random numbers for the quiz
-        const num1 = Phaser.Math.Between(1, 25); // First number between 1-25
-        const num2 = Phaser.Math.Between(1, 25); // Second number between 1-25
-        const operation = Phaser.Math.RND.pick(['+', '-']);
-        const answer = operation === '+' ? num1 + num2 : num1 - num2;
+        const num1 = Phaser.Math.Between(2, 10); // First number between 2-10
+        const num2 = Phaser.Math.Between(2, 10); // Second number between 2-10
+        const answer = num1 * num2;
 
-        // Ensure answer is positive and under 50
-        if (answer < 0 || answer > 50) {
-            // If answer is invalid, regenerate the quiz
-            return this.showQuizDialog();
+        // Randomly decide which repeated addition to use for the correct answer
+        const useNum1 = Phaser.Math.Between(0, 1) === 0;
+        let correctOption;
+        if (useNum1) {
+            correctOption = Array(num2).fill(num1).join('+'); // num1 added num2 times
+        } else {
+            correctOption = Array(num1).fill(num2).join('+'); // num2 added num1 times
         }
 
-        // Generate 3 random distractors
-        const options = new Set([answer]);
-        while (options.size < 4) {
-            let delta = Phaser.Math.Between(-10, 10);
-            if (delta === 0) delta = 1;
-            let distractor = answer + delta;
-            // Only add distractor if it's positive and under 50
-            if (distractor > 0 && distractor < 50) {
-                options.add(distractor);
+        // Helper to generate a plausible but incorrect repeated addition
+        function generateDistractor() {
+            let a, b;
+            do {
+                a = Phaser.Math.Between(2, 10);
+                b = Phaser.Math.Between(2, 10);
+            } while ((a === num1 && b === num2) || (a === num2 && b === num1) || a * b === answer);
+            return Array(b).fill(a).join('+');
+        }
+
+        // Build options: 1 correct, 3 distractors
+        const options = [correctOption];
+        while (options.length < 4) {
+            let distractor = generateDistractor();
+            if (!options.includes(distractor)) {
+                options.push(distractor);
             }
         }
-        const shuffledOptions = Phaser.Utils.Array.Shuffle(Array.from(options));
+        // Shuffle options
+        Phaser.Utils.Array.Shuffle(options);
 
-        // Create dialog box
+        // --- Stage 1 Dialog ---
         const dialogBox = this.add.graphics();
         dialogBox.fillStyle(0x000000, 0.8);
-        dialogBox.fillRect(0, 0, 400, 260);
-        dialogBox.setPosition(this.cameras.main.width / 2 - 200, this.cameras.main.height / 2 - 130);
+        dialogBox.fillRect(0, 0, 400, 300);
+        dialogBox.setPosition(this.cameras.main.width / 2 - 200, this.cameras.main.height / 2 - 150);
 
-        // Add question text
         const questionText = this.add.text(
             this.cameras.main.width / 2,
-            this.cameras.main.height / 2 - 80,
-            `What is ${num1} ${operation} ${num2}?`,
+            this.cameras.main.height / 2 - 100,
+            `${num1} times ${num2} = ?`,
             {
                 fontSize: '28px',
                 color: '#ffffff',
@@ -824,52 +833,152 @@ class IsometricGridScene extends Phaser.Scene {
             }
         ).setOrigin(0.5);
 
-        // 2x2 grid layout for answer buttons
-        const buttonWidth = 90;
-        const buttonHeight = 44;
-        const buttonSpacingX = 30;
-        const buttonSpacingY = 22;
-        const gridStartX = this.cameras.main.width / 2 - buttonWidth - buttonSpacingX / 2;
-        const gridStartY = this.cameras.main.height / 2 - 10;
-        const answerButtons = [];
-        for (let i = 0; i < 4; i++) {
-            const row = Math.floor(i / 2);
-            const col = i % 2;
-            const btnX = gridStartX + col * (buttonWidth + buttonSpacingX);
-            const btnY = gridStartY + row * (buttonHeight + buttonSpacingY);
-            const opt = shuffledOptions[i];
-            const btn = this.add.text(
-                btnX + buttonWidth / 2,
-                btnY + buttonHeight / 2,
-                opt.toString(),
+        const optionsContainer = this.add.container(0, 0);
+        let attempts = 0;
+        const maxAttempts = 2;
+
+        const evaluateRepeatedAddition = (expression) => {
+            const parts = expression.split('+');
+            return parts.reduce((sum, num) => sum + parseInt(num), 0);
+        };
+
+        // --- Stage 2 Dialog ---
+        const showStage2 = (repeatedAddition) => {
+            // Clean up stage 1
+            dialogBox.destroy();
+            questionText.destroy();
+            optionsContainer.destroy();
+
+            // Stage 2 setup
+            const stage2Box = this.add.graphics();
+            stage2Box.fillStyle(0x000000, 0.8);
+            stage2Box.fillRect(0, 0, 400, 220);
+            stage2Box.setPosition(this.cameras.main.width / 2 - 200, this.cameras.main.height / 2 - 110);
+
+            const correctSum = evaluateRepeatedAddition(repeatedAddition);
+            const stage2Question = this.add.text(
+                this.cameras.main.width / 2,
+                this.cameras.main.height / 2 - 60,
+                `${repeatedAddition} = ?`,
                 {
-                    fontSize: '22px',
+                    fontSize: '28px',
+                    color: '#ffffff',
+                    align: 'center',
+                    fontFamily: 'monospace',
+                    fontStyle: 'bold',
+                }
+            ).setOrigin(0.5);
+
+            // Generate 3 distractor numbers
+            const distractors = new Set();
+            while (distractors.size < 3) {
+                let delta = Phaser.Math.Between(-6, 6);
+                if (delta === 0) continue;
+                let distractor = correctSum + delta;
+                if (distractor > 0 && distractor !== correctSum) {
+                    distractors.add(distractor);
+                }
+            }
+            const stage2Options = [correctSum, ...Array.from(distractors)];
+            Phaser.Utils.Array.Shuffle(stage2Options);
+
+            let stage2Attempts = 0;
+            const stage2MaxAttempts = 2;
+            const stage2OptionsContainer = this.add.container(0, 0);
+            const buttonWidth = 100;
+            const buttonHeight = 44;
+            const buttonSpacing = 18;
+            const startY = this.cameras.main.height / 2 - 10;
+
+            stage2Options.forEach((opt, idx) => {
+                const button = this.add.text(
+                    this.cameras.main.width / 2,
+                    startY + idx * (buttonHeight + buttonSpacing),
+                    opt.toString(),
+                    {
+                        fontSize: '22px',
+                        color: '#ffffff',
+                        backgroundColor: '#4a4a4a',
+                        padding: { x: 18, y: 8 },
+                        align: 'center',
+                        fontStyle: 'bold',
+                        stroke: '#000000',
+                        strokeThickness: 2
+                    }
+                ).setOrigin(0.5).setInteractive({ useHandCursor: true });
+
+                button.on('pointerdown', () => {
+                    this.sounds.button.play();
+                    if (opt === correctSum) {
+                        this.coins += 20;
+                        this.scene.get('UIScene').updateCoins(this.coins);
+                        this.showMessage('Correct! +20 coins!', '#00ff00');
+                        this.sounds.correct.play();
+                        // Clean up
+                        stage2Box.destroy();
+                        stage2Question.destroy();
+                        stage2OptionsContainer.destroy();
+                    } else {
+                        stage2Attempts++;
+                        if (stage2Attempts >= stage2MaxAttempts) {
+                            this.showMessage('Game Over! Try again.', '#ff0000');
+                            stage2Box.destroy();
+                            stage2Question.destroy();
+                            stage2OptionsContainer.destroy();
+                        } else {
+                            button.setStyle({ backgroundColor: '#ff0000' });
+                            this.showMessage('Wrong answer! Try again.', '#ff0000');
+                        }
+                    }
+                });
+                stage2OptionsContainer.add(button);
+            });
+        };
+
+        // --- Stage 1 Option Buttons ---
+        const buttonWidth = 180;
+        const buttonHeight = 44;
+        const buttonSpacing = 20;
+        const startY = this.cameras.main.height / 2 - 30;
+
+        options.forEach((option, index) => {
+            const button = this.add.text(
+                this.cameras.main.width / 2,
+                startY + index * (buttonHeight + buttonSpacing),
+                option,
+                {
+                    fontSize: '20px',
                     color: '#ffffff',
                     backgroundColor: '#4a4a4a',
-                    padding: { x: 18, y: 8 },
+                    padding: { x: 15, y: 10 },
                     align: 'center',
                     fontStyle: 'bold',
                     stroke: '#000000',
                     strokeThickness: 2
                 }
             ).setOrigin(0.5).setInteractive({ useHandCursor: true });
-            btn.on('pointerdown', () => {
+
+            button.on('pointerdown', () => {
                 this.sounds.button.play();
-                if (opt === answer) {
-                    this.coins += 20;
-                    this.scene.get('UIScene').updateCoins(this.coins);
-                    this.showMessage('Correct! +20 coins!', '#00ff00');
-                    this.sounds.correct.play();
+                const result = evaluateRepeatedAddition(option);
+                if (result === answer && option === correctOption) {
+                    // Proceed to stage 2
+                    showStage2(option);
                 } else {
-                    this.showMessage('Wrong answer!', '#ff0000');
+                    attempts++;
+                    if (attempts >= maxAttempts) {
+                        this.showMessage('Game Over! Try again.', '#ff0000');
+                        dialogBox.destroy();
+                        questionText.destroy();
+                        optionsContainer.destroy();
+                    } else {
+                        button.setStyle({ backgroundColor: '#ff0000' });
+                        this.showMessage('Wrong answer! Try again.', '#ff0000');
+                    }
                 }
-                // Clean up
-                dialogBox.destroy();
-                questionText.destroy();
-                answerButtons.forEach(b => b.destroy());
             });
-            answerButtons.push(btn);
-        }
+            optionsContainer.add(button);
+        });
     }
 
     showMessage(text, color) {
