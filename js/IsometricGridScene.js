@@ -51,8 +51,8 @@ class IsometricGridScene extends Phaser.Scene {
             fence: 1,
             fence2: 1,
             fencecorner: 1,
-            mystical1: 1,
-            mystical2: 1
+            mystical1: 0,
+            mystical2: 0
         };
         // Configuration for shop prices
         this.spritePrices = {
