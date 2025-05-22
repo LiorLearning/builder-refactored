@@ -2,8 +2,8 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Phaser Isometric Grid</title>
-    <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&display=swap" rel="stylesheet">
+    <title>Dragon City Builder</title>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Cinzel:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
         body {
             margin: 0;
@@ -13,18 +13,69 @@
             justify-content: center;
             align-items: center;
             min-height: 100vh;
-            background-color: #2c3e50;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 25%, #0f3460 50%, #533483 75%, #e94560 100%);
+            background-size: 400% 400%;
+            animation: dragonGradient 15s ease infinite;
         }
+        
+        @keyframes dragonGradient {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        
         canvas {
             display: block;
+            border-radius: 10px;
+            box-shadow: 0 0 30px rgba(233, 69, 96, 0.3);
         }
+        
         .header {
-            font-family: 'Fredoka One', cursive;
-            font-size: 48px;
-            color: #ffffff;
+            font-family: 'Cinzel', serif;
+            font-size: 56px;
+            font-weight: 700;
+            color: #FFD700;
             text-align: center;
             margin-bottom: 20px;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+            text-shadow: 
+                0 0 10px rgba(255, 215, 0, 0.8),
+                0 0 20px rgba(255, 215, 0, 0.6),
+                0 0 30px rgba(255, 215, 0, 0.4),
+                2px 2px 8px rgba(0, 0, 0, 0.8);
+            background: linear-gradient(45deg, #FFD700, #FFA500, #FF6347, #FFD700);
+            background-size: 400% 400%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: dragonTextGlow 3s ease-in-out infinite alternate;
+        }
+        
+        @keyframes dragonTextGlow {
+            from {
+                background-position: 0% 50%;
+                filter: drop-shadow(0 0 20px rgba(255, 215, 0, 0.6));
+            }
+            to {
+                background-position: 100% 50%;
+                filter: drop-shadow(0 0 30px rgba(255, 99, 71, 0.8));
+            }
+        }
+        
+        .header::before {
+            content: '🐉';
+            margin-right: 20px;
+            animation: dragonFloat 2s ease-in-out infinite alternate;
+        }
+        
+        .header::after {
+            content: '🐉';
+            margin-left: 20px;
+            animation: dragonFloat 2s ease-in-out infinite alternate-reverse;
+        }
+        
+        @keyframes dragonFloat {
+            from { transform: translateY(0px) scale(1); }
+            to { transform: translateY(-10px) scale(1.1); }
         }
     </style>
 </head>

@@ -3,7 +3,7 @@ const config = {
     width: window.innerWidth,
     height: window.innerHeight,
     backgroundColor: '#00ff00', // Green background
-    scene: [IsometricGridScene, UIScene],
+    scene: [LoadingScene, IsometricGridScene, UIScene],
     pixelArt: true
 };
 

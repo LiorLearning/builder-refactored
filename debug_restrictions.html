@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Debug Restricted Tiles</title>
+</head>
+<body>
+    <h1>Debug Restricted Tiles</h1>
+    <p>Check browser console for debug information</p>
+    
+    <script>
+        // Debug script to verify restricted tiles
+        async function debugRestrictedTiles() {
+            try {
+                // Load the restricted tiles JSON
+                const response = await fetch('restricted_tiles.json');
+                const restrictedTilesList = await response.json();
+                
+                console.log('Total restricted tiles in JSON:', restrictedTilesList.length);
+                console.log('First 10 restricted tiles:', restrictedTilesList.slice(0, 10));
+                console.log('Last 10 restricted tiles:', restrictedTilesList.slice(-10));
+                
+                // Create a Set for faster lookup (like the game does)
+                const restrictedTilesSet = new Set(restrictedTilesList);
+                
+                // Test some specific coordinates
+                const testCoords = ["-18,-6", "-19,-6", "0,0", "1,1", "-5,5"];
+                testCoords.forEach(coord => {
+                    const isRestricted = restrictedTilesSet.has(coord);
+                    console.log(`Tile ${coord}: ${isRestricted ? 'RESTRICTED' : 'ALLOWED'}`);
+                });
+                
+                // Check for coordinate range
+                let minRow = Infinity, maxRow = -Infinity;
+                let minCol = Infinity, maxCol = -Infinity;
+                
+                restrictedTilesList.forEach(coord => {
+                    const [row, col] = coord.split(',').map(Number);
+                    minRow = Math.min(minRow, row);
+                    maxRow = Math.max(maxRow, row);
+                    minCol = Math.min(minCol, col);
+                    maxCol = Math.max(maxCol, col);
+                });
+                
+                console.log('Coordinate ranges:');
+                console.log(`Rows: ${minRow} to ${maxRow}`);
+                console.log(`Cols: ${minCol} to ${maxCol}`);
+                
+                // Check if all coordinates are within the game's grid range (-50 to 49)
+                const outOfRange = restrictedTilesList.filter(coord => {
+                    const [row, col] = coord.split(',').map(Number);
+                    return row < -50 || row >= 50 || col < -50 || col >= 50;
+                });
+                
+                if (outOfRange.length > 0) {
+                    console.warn('Tiles outside game grid range:', outOfRange);
+                } else {
+                    console.log('✓ All restricted tiles are within game grid range');
+                }
+                
+            } catch (error) {
+                console.error('Error loading restricted tiles:', error);
+            }
+        }
+        
+        // Run debug when page loads
+        debugRestrictedTiles();
+    </script>
+</body>
+</html> 
