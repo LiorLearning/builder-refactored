@@ -423,6 +423,7 @@ class IsometricGridScene extends Phaser.Scene {
         iconKeys.forEach(key => {
             this.spriteCounters.set(key, this.spriteInitialCounts[key]); // Use individual initial counts
         });
+        this.quizActive = false; // Add flag to track if quiz is active
     }
 
     preload() {
@@ -476,7 +477,10 @@ class IsometricGridScene extends Phaser.Scene {
 
             // Add spacebar event listener for quiz
             this.input.keyboard.on('keydown-SPACE', () => {
-                this.showQuizDialog();
+                if (!this.quizActive) { // Only show quiz if no quiz is currently active
+                    this.quizActive = true;
+                    this.showQuizDialog();
+                }
             });
 
             // Show welcome message
@@ -1824,6 +1828,7 @@ class IsometricGridScene extends Phaser.Scene {
                     this.celebrateCorrectAnswer(buttonBg, buttonText);
                     this.time.delayedCall(2000, () => {
                         this.quizContainer.destroy();
+                        this.quizActive = false; // Reset flag when quiz is completed
                         this.showVictoryCelebration();
                     });
                 } else {
@@ -1834,6 +1839,7 @@ class IsometricGridScene extends Phaser.Scene {
                     if (attempts >= maxAttempts) {
                         this.time.delayedCall(2000, () => {
                             this.quizContainer.destroy();
+                            this.quizActive = false; // Reset flag when quiz is completed
                             this.showMessage('Try again next time! 🌟', '#FF6B6B');
                         });
                     }
@@ -1911,18 +1917,18 @@ class IsometricGridScene extends Phaser.Scene {
     showVictoryCelebration() {
         // Create victory message
         const victoryText = this.add.text(
-                this.cameras.main.width / 2,
+            this.cameras.main.width / 2,
             this.cameras.main.height / 2 - 100,
-            '🎉 AMAZING! 🎉\nYou earned 20 coins!',
-                {
+            '🎉 AMAZING! 🎉',
+            {
                 fontSize: '40px',
                 color: '#FFD700',
                 fontFamily: 'Comic Sans MS, cursive, sans-serif',
-                    fontStyle: 'bold',
+                fontStyle: 'bold',
                 stroke: '#2C3E50',
                 strokeThickness: 4,
                 align: 'center'
-                }
+            }
         ).setOrigin(0.5);
 
         // Victory animation
@@ -1943,7 +1949,8 @@ class IsometricGridScene extends Phaser.Scene {
             }
         });
 
-        this.time.delayedCall(3000, () => {
+        // Remove victory text after animation
+        this.time.delayedCall(2000, () => {
             victoryText.destroy();
         });
     }
