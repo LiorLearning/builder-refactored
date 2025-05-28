@@ -23,11 +23,14 @@ class LoadingScene extends Phaser.Scene {
         this.load.image('castle', 'assets/castle.png');
         this.load.image('hut', 'assets/hut.png');
         this.load.image('wall', 'assets/wall.png');
-        this.load.image('wave-wall', 'assets/wave-wall.png');
+        this.load.image('temple', 'assets/temple.png');
+        this.load.image('shrine', 'assets/shrine.png');
+        this.load.image('temple-u3', 'assets/temple-u3.png');
         this.load.image('tower1', 'assets/tower1.png');
         this.load.image('coin', 'assets/coin.png');
         this.load.image('shop', 'assets/shop.png');
         this.load.image('pixie', 'assets/pixie.png');
+        this.load.image('cloud', 'assets/cloud.png');
         
         // Load audio files
         this.load.audio('bgm', 'assets/audio/bgm.mp3');
@@ -376,6 +379,37 @@ class IsometricGridScene extends Phaser.Scene {
         this.secondWelcomeMessageShown = false; // Track if second welcome message has been shown
         this.showGrid = false; // Grid is hidden by default (toggle available in dev mode)
         this.hoveredPlacementTiles = [];
+        
+        // Population tracking
+        this.population = 0; // Current population count
+        this.populationBoosts = {
+            hut: 5,           // Each hut gives +5 population
+            shrine: 20,       // Each shrine gives +20 population (to be added)
+            temple: 40,       // Each mini time temple gives +40 population
+            legendary_temple: 100  // Each legendary time temple gives +100 population (to be added)
+        };
+        
+        // Multi-grid system properties
+        this.currentGridLayer = 0; // Track which grid layer is active (0, 1, or 2)
+        this.gridLayers = []; // Array to store all three grid layers
+        this.gridTiles = []; // Array to store tiles for each grid layer
+        this.gridTileStates = []; // Array to store tile states for each grid layer
+        this.gridColors = [0x7cba34, 0x3498db, 0xffff00]; // Green, Blue, Yellow
+        this.gridOffsets = [0, -40, -80]; // Vertical offsets for each grid layer
+        
+        // Cloud system (always visible, independent of grid layers)
+        this.clouds = []; // Array to hold active clouds
+        this.cloudSpawnTimer = 10; // Timer for spawning new clouds
+        this.cloudSpawnInterval = 1000; // Spawn a new cloud every 1.5 seconds (faster for better coverage)
+        this.maxClouds = 15; // Maximum number of clouds on screen (increased for grid coverage)
+        this.cloudContainer = null; // Container for all clouds
+        
+        // Cloud appearance configuration
+        this.cloudScaleMin = 1.0; // Minimum cloud scale
+        this.cloudScaleMax = 5.0; // Maximum cloud scale
+        this.cloudAlphaMin = 0.5; // Minimum cloud transparency (60%)
+        this.cloudAlphaMax = 1.0; // Maximum cloud transparency (100%)
+        
         // Audio instances
         this.sounds = {
             bgm: null,
@@ -385,41 +419,69 @@ class IsometricGridScene extends Phaser.Scene {
             shop: null
         };
         this.isMuted = false; // Track mute state
-        // Icon configuration for yOffset and scale
-        this.iconConfig = {
-            fence:  { yOffset: this.tileSize / 4 + 10,  scale: 1, tileSpan: 1 },
-            fence2: { yOffset: this.tileSize / 4 + 10,  scale: 1, tileSpan: 1 },
-            castle: { yOffset: this.tileSize / 4 + 19, scale: 1.1, tileSpan: 2 },
-            hut: { yOffset: this.tileSize / 4 + 2, scale: 1.0, tileSpan: 1 },
-            wall: { yOffset: this.tileSize / 4 + 8, scale: 1.0, tileSpan: 1 },
-            'wave-wall': { yOffset: this.tileSize / 4 + 8, scale: 1.0, tileSpan: 1 },
-            tower1: { yOffset: this.tileSize / 4 + 5, scale: 1.1, tileSpan: 1 }
+        
+        // ===== ASSET CONFIGURATION - EDIT THESE VALUES EASILY =====
+        // This is the main configuration for all sprites in the game
+        // You can easily modify population, prices, initial counts, and display properties here
+        this.assetConfig = {
+            hut: {
+                // Display properties
+                yOffset: this.tileSize / 4 + 6,
+                scale: 1.0,
+                tileSpan: 1,
+                // Game mechanics
+                population: 10,       // 🏠 Population boost (EDIT THIS)
+                price: 50,           // 💰 Shop price (EDIT THIS)
+                initialCount: 2      // 📦 Starting inventory (EDIT THIS)
+            },
+            shrine: {
+                yOffset: this.tileSize / 4 + 28,
+                scale: 1.2,
+                tileSpan: 2,
+                population: 20,       // 🏠 Population boost (EDIT THIS)
+                price: 150,          // 💰 Shop price (EDIT THIS)
+                initialCount: 1      // 📦 Starting inventory (EDIT THIS)
+            },
+            temple: {
+                yOffset: this.tileSize / 4 + 28,
+                scale: 1.4,
+                tileSpan: 2,
+                population: 40,       // 🏠 Population boost (EDIT THIS)
+                price: 300,          // 💰 Shop price (EDIT THIS)
+                initialCount: 0      // 📦 Starting inventory (EDIT THIS)
+            },
+            'temple-u3': {
+                yOffset: this.tileSize / 4 + 35,
+                scale: 1.6,
+                tileSpan: 3,
+                population: 100,      // 🏠 Population boost (EDIT THIS)
+                price: 500,          // 💰 Shop price (EDIT THIS)
+                initialCount: 0      // 📦 Starting inventory (EDIT THIS)
+            }
         };
-        // Configuration for initial sprite counts
-        this.spriteInitialCounts = {
-            fence: 1,
-            fence2: 1,
-            castle: 0,
-            hut: 2,
-            wall: 0,
-            'wave-wall': 1,
-            tower1: 0
-        };
-        // Configuration for shop prices - Dragon City Theme
-        this.spritePrices = {
-            fence: 15,      // Dragon Fence
-            fence2: 15,     // Magic Barrier
-            castle: 50,     // Dragon Castle
-            hut: 20,        // Dragon Hut
-            wall: 30,       // Dragon Wall
-            'wave-wall': 35,  // Wave Dragon Wall
-            tower1: 40      // Dragon Tower
-        };
+        
+        // Create backward-compatible references (for existing code)
+        this.iconConfig = {};
+        this.spriteInitialCounts = {};
+        this.spritePrices = {};
+        
+        // Populate backward-compatible objects from the new unified config
+        Object.keys(this.assetConfig).forEach(key => {
+            const config = this.assetConfig[key];
+            this.iconConfig[key] = {
+                yOffset: config.yOffset,
+                scale: config.scale,
+                tileSpan: config.tileSpan
+            };
+            this.spriteInitialCounts[key] = config.initialCount;
+            this.spritePrices[key] = config.price;
+        });
+        
         this.toolbarExpanded = false; // Start closed
         
         // Initialize sprite counters for each icon type
         this.spriteCounters = new Map();
-        const iconKeys = ['fence', 'fence2', 'castle', 'hut', 'wall', 'wave-wall', 'tower1'];
+        const iconKeys = ['hut', 'shrine', 'temple', 'temple-u3'];
         iconKeys.forEach(key => {
             this.spriteCounters.set(key, this.spriteInitialCounts[key]); // Use individual initial counts
         });
@@ -441,33 +503,55 @@ class IsometricGridScene extends Phaser.Scene {
         // Start background music
         this.sounds.bgm.play();
 
-        // Create grid layer
-        this.gridLayer = this.add.container(0, 0); // Use a container for all grid content
-        
-        // Add the background image to grid layer
+        // Create a background container that will zoom and pan with the grid
+        this.backgroundContainer = this.add.container(0, 0);
+        this.backgroundContainer.setDepth(-1000);
+
+        // Add the background image to the background container
         const bg = this.add.image(0, 0, 'ground');
         bg.setOrigin(0, 0);
         bg.setDisplaySize(this.cameras.main.width, this.cameras.main.height);
-        bg.setDepth(-1000);
-        this.gridLayer.add(bg);
+        this.backgroundContainer.add(bg);
+        
+        // Create three grid layers with different vertical offsets
+        for (let i = 0; i < 3; i++) {
+            const gridLayer = this.add.container(0, this.gridOffsets[i]);
+            gridLayer.setVisible(i === this.currentGridLayer); // Only show the current grid layer
+            this.gridLayers.push(gridLayer);
+            
+            // Initialize arrays for this grid layer
+            this.gridTiles[i] = [];
+            this.gridTileStates[i] = new Map();
+        }
+        
+        // Set the primary grid layer reference for compatibility
+        this.gridLayer = this.gridLayers[this.currentGridLayer];
+        
+        // Create a separate cloud container that's always visible
+        this.cloudContainer = this.add.container(0, 0);
+        this.cloudContainer.setDepth(50); // Above grid but below UI elements
 
         // Add pixie image to bottom left corner
         this.pixieImage = this.add.image(100, this.cameras.main.height - 150, 'pixie');
-        this.pixieImage.setScale(1); // Increased scale for better visibility
+        this.pixieImage.setScale(2); // Increased scale for better visibility
         this.pixieImage.setDepth(2000); // Ensure it's above other elements
 
         // Load restricted tiles before creating the grid
         this.loadRestrictedTiles().then(() => {
-            // Create the grid in grid layer
-            this.createGrid();
+            // Create grids for all three layers
+            this.createAllGrids();
 
             // Launch UI scene
             this.scene.launch('UIScene', { 
                 parentScene: this,
                 tileSize: this.tileSize,
                 iconConfig: this.iconConfig,
-                coins: this.coins
+                coins: this.coins,
+                population: this.population
             });
+
+            // Calculate initial population
+            this.updatePopulation();
 
             // Add reset zoom button to top right
             this.createResetZoomButton();
@@ -483,6 +567,9 @@ class IsometricGridScene extends Phaser.Scene {
                 }
             });
 
+            // Initialize cloud system
+            this.initializeCloudSystem();
+            
             // Show welcome message
             this.showWelcomeMessage();
 
@@ -497,11 +584,35 @@ class IsometricGridScene extends Phaser.Scene {
                     const worldY = (pointer.y - this.gridLayer.y) / this.zoomLevel;
 
                     this.zoomLevel = newZoom;
-                    this.gridLayer.setScale(this.zoomLevel);
-
-                    // After scaling, adjust gridLayer position so the point under the cursor stays fixed
-                    this.gridLayer.x = pointer.x - worldX * this.zoomLevel;
-                    this.gridLayer.y = pointer.y - worldY * this.zoomLevel;
+                    
+                    // Apply zoom to all grid layers, but only adjust position for visible layer
+                    this.gridLayers.forEach((layer, index) => {
+                        layer.setScale(this.zoomLevel);
+                        if (index === this.currentGridLayer) {
+                            // After scaling, adjust gridLayer position so the point under the cursor stays fixed
+                            layer.x = pointer.x - worldX * this.zoomLevel;
+                            layer.y = pointer.y - worldY * this.zoomLevel;
+                        } else {
+                            // Keep other layers aligned with the current layer
+                            layer.x = this.gridLayer.x;
+                            layer.y = this.gridLayer.y;
+                        }
+                    });
+                    
+                    // Apply zoom to background container to keep it aligned with grid
+                    if (this.backgroundContainer) {
+                        this.backgroundContainer.setScale(this.zoomLevel);
+                        // Always align background with layer 0 (green layer) since restricted tiles are only there
+                        this.backgroundContainer.x = this.gridLayers[0].x;
+                        this.backgroundContainer.y = this.gridLayers[0].y;
+                    }
+                    
+                    // Apply zoom to cloud container as well
+                    if (this.cloudContainer) {
+                        this.cloudContainer.setScale(this.zoomLevel);
+                        this.cloudContainer.x = this.gridLayer.x;
+                        this.cloudContainer.y = this.gridLayer.y;
+                    }
                 }
             });
         });
@@ -536,6 +647,9 @@ class IsometricGridScene extends Phaser.Scene {
                     this.showGrid = !this.showGrid;
                     this.updateGridAndItems();
                     this.showMessage(this.showGrid ? 'Grid ON' : 'Grid OFF', '#ffff00');
+                } else if (event.key === 'l' || event.key === 'L') {
+                    // Developer mode: switch between grid layers with 'L'
+                    this.switchGridLayer();
                 }
             }
         });
@@ -616,10 +730,27 @@ class IsometricGridScene extends Phaser.Scene {
 
     resetZoomAndPosition() {
         this.zoomLevel = 1;
-        this.gridLayer.setScale(1);
-        // Center the grid layer
-        this.gridLayer.x = 0;
-        this.gridLayer.y = 0;
+        // Reset all grid layers
+        this.gridLayers.forEach((layer, index) => {
+            layer.setScale(1);
+            layer.x = 0;
+            layer.y = this.gridOffsets[index]; // Set to the original offset for each layer
+        });
+        
+        // Reset background container
+        if (this.backgroundContainer) {
+            this.backgroundContainer.setScale(1);
+            // Always align background with layer 0 (green layer) since restricted tiles are only there
+            this.backgroundContainer.x = 0;
+            this.backgroundContainer.y = this.gridOffsets[0]; // Layer 0 offset (which is 0)
+        }
+        
+        // Reset cloud container
+        if (this.cloudContainer) {
+            this.cloudContainer.setScale(1);
+            this.cloudContainer.x = 0;
+            this.cloudContainer.y = 0;
+        }
     }
 
     createDeleteZone() {
@@ -696,13 +827,29 @@ class IsometricGridScene extends Phaser.Scene {
             shopIcon.setPosition(gameSize.width - coinMarginRight - 50, 30);
         }
 
+        // Update population counter position to keep it centered
+        if (this.populationContainer) {
+            this.populationContainer.setPosition(gameSize.width / 2, 50);
+        }
+
         // Update pixie position
         if (this.pixieImage) {
-            this.pixieImage.setPosition(100, gameSize.height - 150);
+            this.pixieImage.setPosition(100, gameSize.height - 1000);
         }
     }
 
-    createGrid() {
+    createAllGrids() {
+        // Create grids for all three layers
+        for (let layerIndex = 0; layerIndex < 3; layerIndex++) {
+            this.createGrid(layerIndex);
+        }
+        
+        // Maintain compatibility with existing code
+        this.tiles = this.gridTiles[this.currentGridLayer];
+        this.tileStates = this.gridTileStates[this.currentGridLayer];
+    }
+
+    createGrid(layerIndex = 0) {
         const tileW = this.tileSize;
         const tileH = this.tileSize / 2;
 
@@ -714,12 +861,12 @@ class IsometricGridScene extends Phaser.Scene {
         const gridStartX = this.cameras.main.width / 2;
         const gridStartY = this.cameras.main.height / 2;
 
-        this.tiles = [];
+        this.gridTiles[layerIndex] = [];
         let restrictedCount = 0; // Debug counter
         let checkedTiles = []; // Track tiles we check
         let foundRestrictedSamples = []; // Sample of found restricted tiles
         
-        console.log('Starting grid creation...');
+        console.log(`Starting grid creation for layer ${layerIndex}...`);
         console.log('restrictedTiles Set size at grid creation:', this.restrictedTiles.size);
         
         for (let row = -maxTiles; row < maxTiles; row++) {
@@ -729,10 +876,10 @@ class IsometricGridScene extends Phaser.Scene {
                 
                 // Create all tiles in the grid area (removed screen bounds check)
                 const tile = this.add.graphics();
-                this.gridLayer.add(tile);
+                this.gridLayers[layerIndex].add(tile);
                 
                 const tileKey = `${row},${col}`;
-                const isRestricted = this.restrictedTiles.has(tileKey);
+                const isRestricted = layerIndex === 0 && this.restrictedTiles.has(tileKey); // Only apply restrictions to green layer
                 
                 // Debug: Track some specific tiles
                 if (["-18,-6", "-19,-6", "-20,-6", "-5,5", "0,0"].includes(tileKey)) {
@@ -747,7 +894,7 @@ class IsometricGridScene extends Phaser.Scene {
                     }
                 }
                 
-                this.tileStates.set(tileKey, {
+                this.gridTileStates[layerIndex].set(tileKey, {
                     isHovered: false,
                     isSelected: false,
                     isRestricted: isRestricted
@@ -760,7 +907,7 @@ class IsometricGridScene extends Phaser.Scene {
                 );
                 
                 if (isVisible) {
-                    this.drawTile(tile, x, y, false, false, this.tileStates.get(tileKey).isRestricted, tileKey);
+                    this.drawTile(tile, x, y, false, false, this.gridTileStates[layerIndex].get(tileKey).isRestricted, tileKey, layerIndex);
                 }
 
                 // Diamond-shaped hit area
@@ -773,41 +920,42 @@ class IsometricGridScene extends Phaser.Scene {
                 tile.setInteractive(diamond, Phaser.Geom.Polygon.Contains);
 
                 // Store tile information
-                const tileInfo = { graphics: tile, x: x, y: y, row: row, col: col };
-                this.tiles.push(tileInfo);
+                const tileInfo = { graphics: tile, x: x, y: y, row: row, col: col, layerIndex: layerIndex };
+                this.gridTiles[layerIndex].push(tileInfo);
 
                 // Add event handlers
                 this.setupTileEventHandlers(tileInfo);
             }
         }
         
-        console.log(`Grid created with ${restrictedCount} restricted tiles out of ${this.tiles.length} total tiles`);
+        console.log(`Grid layer ${layerIndex} created with ${restrictedCount} restricted tiles out of ${this.gridTiles[layerIndex].length} total tiles`);
         console.log('Checked specific tiles:', checkedTiles);
         console.log('Found restricted samples:', foundRestrictedSamples);
     }
 
     setupTileEventHandlers(tileInfo) {
         const tileKey = `${tileInfo.row},${tileInfo.col}`;
-        const state = this.tileStates.get(tileKey);
+        const layerIndex = tileInfo.layerIndex;
+        const state = this.gridTileStates[layerIndex].get(tileKey);
 
         tileInfo.graphics.on('pointerover', () => {
             // Only show hover effect if tile is not restricted in normal mode
             if (!state.isRestricted || this.developerMode) {
                 state.isHovered = true;
                 this.drawTile(tileInfo.graphics, tileInfo.x, tileInfo.y, 
-                    state.isHovered, state.isSelected, state.isRestricted, tileKey);
+                    state.isHovered, state.isSelected, state.isRestricted, tileKey, layerIndex);
             }
         });
 
         tileInfo.graphics.on('pointerout', () => {
             state.isHovered = false;
             this.drawTile(tileInfo.graphics, tileInfo.x, tileInfo.y, 
-                state.isHovered, state.isSelected, state.isRestricted, tileKey);
+                state.isHovered, state.isSelected, state.isRestricted, tileKey, layerIndex);
         });
 
         tileInfo.graphics.on('pointerdown', () => {
-            if (this.restrictionMode) {
-                // Handle restriction mode
+            if (this.restrictionMode && layerIndex === 0) {
+                // Handle restriction mode - only allow on green layer
                 state.isRestricted = !state.isRestricted;
                 if (state.isRestricted) {
                     this.restrictedTiles.add(tileKey);
@@ -819,20 +967,154 @@ class IsometricGridScene extends Phaser.Scene {
                 state.isSelected = !state.isSelected;
             }
             this.drawTile(tileInfo.graphics, tileInfo.x, tileInfo.y, 
-                state.isHovered, state.isSelected, state.isRestricted, tileKey);
+                state.isHovered, state.isSelected, state.isRestricted, tileKey, layerIndex);
         });
     }
 
+    initializeCloudSystem() {
+        // Create a timer event for cloud spawning
+        this.cloudTimer = this.time.addEvent({
+            delay: this.cloudSpawnInterval,
+            callback: this.spawnCloud,
+            callbackScope: this,
+            loop: true
+        });
+        
+        // Spawn the first cloud immediately
+        this.spawnCloud();
+    }
+    
+    spawnCloud() {
+        if (this.clouds.length >= this.maxClouds) return;
+        
+        // Spawn clouds across the complete screen area
+        // Choose randomly between spawning from right edge or bottom edge
+        const spawnFromRightEdge = Math.random() < 0.5;
+        
+        let startX, startY;
+        
+        if (spawnFromRightEdge) {
+            // Spawn from right edge - cover full height of screen
+            startX = this.cameras.main.width + 100; // Start off-screen right
+            startY = Math.random() * this.cameras.main.height; // Random Y across full screen height
+        } else {
+            // Spawn from bottom edge - cover full width of screen
+            startX = Math.random() * this.cameras.main.width; // Random X across full screen width
+            startY = this.cameras.main.height + 100; // Start off-screen bottom
+        }
+        
+        // Calculate end position using the exact isometric grid angle (26.57°)
+        // tan(26.57°) = 0.5, so for every 2 units left, move 1 unit up
+        const horizontalDistance = startX + 250; // Total horizontal distance to travel
+        const verticalDistance = horizontalDistance * 0.5; // Using tan(26.57°) = 0.5
+        
+        const endX = -250; // End off-screen left
+        const endY = startY - verticalDistance; // Move up by the calculated vertical distance
+        
+        // Create cloud sprite
+        const cloud = this.add.image(startX, startY, 'cloud');
+        
+        // Varied sizes while maintaining aspect ratio (uniform scaling)
+        const scale = this.cloudScaleMin + Math.random() * (this.cloudScaleMax - this.cloudScaleMin);
+        cloud.setScale(scale); // This maintains aspect ratio
+        
+        // Varied transparency for depth effect
+        const alpha = this.cloudAlphaMin + Math.random() * (this.cloudAlphaMax - this.cloudAlphaMin);
+        cloud.setAlpha(alpha);
+        
+        // Add cloud to the separate cloud container (always visible)
+        this.cloudContainer.add(cloud);
+        
+        // Add to clouds array
+        this.clouds.push(cloud);
+        
+        // Calculate movement duration based on distance
+        const distance = Phaser.Math.Distance.Between(startX, startY, endX, endY);
+        const duration = distance * 8 + Math.random() * 2000; // Slight speed variation
+        
+        // Animate cloud movement from bottom-right to top-left
+        this.tweens.add({
+            targets: cloud,
+            x: endX,
+            y: endY,
+            duration: duration,
+            ease: 'Linear',
+            onComplete: () => {
+                // Remove cloud when it reaches the end
+                this.removeCloud(cloud);
+            }
+        });
+        
+        console.log(`Spawned cloud at (${Math.round(startX)}, ${Math.round(startY)}), total clouds: ${this.clouds.length}`);
+    }
+    
+    removeCloud(cloud) {
+        // Remove from clouds array
+        const index = this.clouds.indexOf(cloud);
+        if (index > -1) {
+            this.clouds.splice(index, 1);
+        }
+        
+        // Destroy the cloud sprite
+        if (cloud && !cloud.destroyed) {
+            cloud.destroy();
+        }
+        
+        console.log(`Removed cloud, remaining clouds: ${this.clouds.length}`);
+    }
+    
+    cleanupCloudSystem() {
+        // Remove cloud timer
+        if (this.cloudTimer) {
+            this.cloudTimer.destroy();
+            this.cloudTimer = null;
+        }
+        
+        // Remove all clouds
+        this.clouds.forEach(cloud => {
+            if (cloud && !cloud.destroyed) {
+                cloud.destroy();
+            }
+        });
+        this.clouds = [];
+        
+        // Destroy cloud container
+        if (this.cloudContainer && !this.cloudContainer.destroyed) {
+            this.cloudContainer.destroy();
+            this.cloudContainer = null;
+        }
+    }
+
     getPointerWorldPosition(pointer) {
+        // Convert screen coordinates to world coordinates
+        const worldX = (pointer.x - this.gridLayer.x) / this.gridLayer.scaleX;
+        const worldY = (pointer.y - this.gridLayer.y) / this.gridLayer.scaleY;
+        
         return {
-            x: (pointer.x - this.gridLayer.x) / this.gridLayer.scaleX,
-            y: (pointer.y - this.gridLayer.y) / this.gridLayer.scaleY
+            x: worldX,
+            y: worldY
+        };
+    }
+
+    getPointerWorldPositionForTileSelection(pointer) {
+        // Convert screen coordinates to world coordinates
+        const worldX = (pointer.x - this.gridLayer.x) / this.gridLayer.scaleX;
+        const worldY = (pointer.y - this.gridLayer.y) / this.gridLayer.scaleY;
+        
+        // Apply calibration offset for better isometric tile selection
+        // Since the user reports that hovering over a sprite selects the tile below,
+        // we need to offset the Y coordinate upward in the isometric space
+        const calibrationOffsetY = -this.tileSize / 4; // Offset upward by quarter tile height
+        
+        return {
+            x: worldX,
+            y: worldY + calibrationOffsetY
         };
     }
 
     handleDragEnd(pointer) {
         if (this.draggedItem) {
-            const pointerWorld = this.getPointerWorldPosition(pointer);
+            const pointerWorld = this.getPointerWorldPositionForTileSelection(pointer);
             let closestTile = null;
             let minDistance = Infinity;
             for (const tile of this.tiles) {
@@ -1004,19 +1286,23 @@ class IsometricGridScene extends Phaser.Scene {
                 this.sounds.pop.play();
                 this.draggedItem.destroy();
                 this.draggedItem = null;
-                this.gridLayer.list.sort((a, b) => a.y - b.y);
+                this.sortByIsometricDepth();
                 // Show second welcome message only once
                 if (this.welcomeChatbox && !this.secondWelcomeMessageShown) {
                     this.welcomeChatbox.destroy();
                     this.showSecondWelcomeMessage();
                     this.secondWelcomeMessageShown = true;
                 }
+                
+                // Update population after placing an item
+                this.updatePopulation();
+                
                 return;
             }
             this.draggedItem.destroy();
             this.draggedItem = null;
         }
-        this.gridLayer.list.sort((a, b) => a.y - b.y);
+        this.sortByIsometricDepth();
     }
 
     handlePlacedSpriteDragEnd(item, pointer) {
@@ -1030,7 +1316,7 @@ class IsometricGridScene extends Phaser.Scene {
                 return;
             }
         
-        const pointerWorld = this.getPointerWorldPosition(pointer);
+        const pointerWorld = this.getPointerWorldPositionForTileSelection(pointer);
         let closestTile = null;
         let minDistance = Infinity;
 
@@ -1115,6 +1401,9 @@ class IsometricGridScene extends Phaser.Scene {
                 if (this.selectedItem === item) {
                     this.updateRotateButtonPosition();
                 }
+                
+                // Update population after moving an item
+                this.updatePopulation();
             } else {
                 // Invalid location - restore to original position
                 item.x = item.originalX;
@@ -1175,11 +1464,11 @@ class IsometricGridScene extends Phaser.Scene {
         this.updateGridAndItems();
 
         // Re-sort depth
-        this.gridLayer.list.sort((a, b) => a.y - b.y);
+        this.sortByIsometricDepth();
     }
 
     updateDragHoverTiles(draggedSprite, pointer) {
-        const pointerWorld = this.getPointerWorldPosition(pointer);
+        const pointerWorld = this.getPointerWorldPositionForTileSelection(pointer);
         let closestTile = null;
         let minDistance = Infinity;
 
@@ -1302,6 +1591,9 @@ class IsometricGridScene extends Phaser.Scene {
 
         // Show feedback message
         this.showMessage('Item deleted!', '#ff4444');
+        
+        // Update population after deleting an item
+        this.updatePopulation();
     }
 
     createDeletionEffect(x, y) {
@@ -1324,7 +1616,7 @@ class IsometricGridScene extends Phaser.Scene {
         this.sounds.pop.play();
     }
 
-    drawTile(graphics, x, y, isHovered = false, isSelected = false, isRestricted = false, tileKey = null) {
+    drawTile(graphics, x, y, isHovered = false, isSelected = false, isRestricted = false, tileKey = null, layerIndex = 0) {
         graphics.clear();
         
         if (this.developerMode) {
@@ -1337,7 +1629,7 @@ class IsometricGridScene extends Phaser.Scene {
             } else if (isHovered) {
                 strokeColor = 0x00ffff; // Cyan for hovered tiles
             } else {
-                strokeColor = 0x7cba34; // Green for normal tiles
+                strokeColor = this.gridColors[layerIndex]; // Use grid-specific color
             }
             const lineWidth = 2 / this.baseScale;
             graphics.lineStyle(lineWidth, strokeColor);
@@ -1371,7 +1663,7 @@ class IsometricGridScene extends Phaser.Scene {
             } else if (isHovered) {
                 strokeColor = 0x00ffff;
             } else {
-                strokeColor = 0x7cba34;
+                strokeColor = this.gridColors[layerIndex]; // Use grid-specific color
             }
             if (strokeColor !== null) {
                 const lineWidth = 2 / this.baseScale;
@@ -1402,7 +1694,7 @@ class IsometricGridScene extends Phaser.Scene {
                 );
                 
                 if (isVisible) {
-                    this.drawTile(tile.graphics, tile.x, tile.y, false, false, this.tileStates.get(tileKey).isRestricted, tileKey);
+                    this.drawTile(tile.graphics, tile.x, tile.y, false, false, this.tileStates.get(tileKey).isRestricted, tileKey, this.currentGridLayer);
                 }
             }
         });
@@ -1424,7 +1716,44 @@ class IsometricGridScene extends Phaser.Scene {
                 }
             }
         });
-        this.gridLayer.list.sort((a, b) => a.y - b.y);
+        this.sortByIsometricDepth();
+    }
+
+    switchGridLayer() {
+        if (!this.developerMode) return;
+        
+        // Hide current grid layer
+        this.gridLayers[this.currentGridLayer].setVisible(false);
+        
+        // Switch to next grid layer (cycle through 0, 1, 2)
+        this.currentGridLayer = (this.currentGridLayer + 1) % 3;
+        
+        // Show new grid layer
+        this.gridLayers[this.currentGridLayer].setVisible(true);
+        
+        // Update references for compatibility
+        this.gridLayer = this.gridLayers[this.currentGridLayer];
+        this.tiles = this.gridTiles[this.currentGridLayer];
+        this.tileStates = this.gridTileStates[this.currentGridLayer];
+        
+        // Update zoom scaling for the new layer
+        this.gridLayer.setScale(this.zoomLevel);
+        
+        // Ensure background stays aligned with layer 0 when switching layers
+        if (this.backgroundContainer) {
+            this.backgroundContainer.x = this.gridLayers[0].x;
+            this.backgroundContainer.y = this.gridLayers[0].y;
+        }
+        
+        // Update the grid layer indicator
+        this.updateGridLayerIndicator();
+        
+        // Show message indicating which layer is active
+        const layerNames = ['Ground Layer', 'Mid Layer', 'Top Layer'];
+        const layerColors = ['Green', 'Blue', 'Yellow'];
+        this.showMessage(`Switched to: ${layerNames[this.currentGridLayer]} (${layerColors[this.currentGridLayer]})`, this.gridColors[this.currentGridLayer]);
+        
+        console.log(`Switched to grid layer ${this.currentGridLayer}`);
     }
 
     toggleDeveloperMode() {
@@ -1524,8 +1853,40 @@ class IsometricGridScene extends Phaser.Scene {
                 fontStyle: 'bold'
             });
             this.devModeText.setDepth(2000);
+            
+            // Add grid layer indicator
+            this.gridLayerText = this.add.text(10, 40, '', {
+                fontSize: '18px',
+                color: '#ffffff',
+                fontStyle: 'bold',
+                backgroundColor: '#000000'
+            });
+            this.gridLayerText.setDepth(2000);
+            
+            // Add instructions text
+            this.instructionsText = this.add.text(10, 70, 'Press L to switch layers', {
+                fontSize: '14px',
+                color: '#ffff00',
+                fontStyle: 'bold'
+            });
+            this.instructionsText.setDepth(2000);
         } else {
             this.devModeText.setVisible(true);
+        }
+        
+        this.updateGridLayerIndicator();
+    }
+
+    updateGridLayerIndicator() {
+        if (this.gridLayerText) {
+            const layerNames = ['Ground Layer', 'Mid Layer', 'Top Layer'];
+            const layerColors = ['Green', 'Blue', 'Yellow'];
+            this.gridLayerText.setText(`Layer: ${layerNames[this.currentGridLayer]} (${layerColors[this.currentGridLayer]})`);
+            this.gridLayerText.setStyle({ color: `#${this.gridColors[this.currentGridLayer].toString(16).padStart(6, '0')}` });
+        }
+        
+        if (this.instructionsText) {
+            this.instructionsText.setVisible(true);
         }
     }
 
@@ -1534,45 +1895,81 @@ class IsometricGridScene extends Phaser.Scene {
         if (this.devModeText) {
             this.devModeText.setVisible(false);
         }
+        if (this.gridLayerText) {
+            this.gridLayerText.setVisible(false);
+        }
+        if (this.instructionsText) {
+            this.instructionsText.setVisible(false);
+        }
     }
 
     showQuizDialog() {
-        // Generate random numbers for the quiz
-        const num1 = Phaser.Math.Between(2, 10);
-        const num2 = Phaser.Math.Between(2, 10);
-        const answer = num1 * num2;
-
-        // Randomly decide which repeated addition to use for the correct answer
-        const useNum1 = Phaser.Math.Between(0, 1) === 0;
-        let correctOption;
-        if (useNum1) {
-            correctOption = Array(num2).fill(num1).join('+');
+        // Generate random multiplication question
+        let num1, num2, answer;
+        
+        // Randomly choose between 1x1 digit or 2x1 digit multiplication
+        const use2x1 = Phaser.Math.Between(0, 100) < 30; // 30% chance for 2x1 digit
+        
+        if (use2x1) {
+            // 2x1 digit multiplication (10-99 x 1-9, answer must not exceed 150)
+            num1 = Phaser.Math.Between(10, 16); // Limited range to ensure answer ≤ 150
+            num2 = Phaser.Math.Between(1, 9);
+            answer = num1 * num2;
+            
+            // Double check answer doesn't exceed 150
+            if (answer > 150) {
+                num1 = Phaser.Math.Between(1, 9);
+                num2 = Phaser.Math.Between(1, 9);
+                answer = num1 * num2;
+            }
         } else {
-            correctOption = Array(num1).fill(num2).join('+');
+            // 1x1 digit multiplication
+            num1 = Phaser.Math.Between(1, 9);
+            num2 = Phaser.Math.Between(1, 9);
+            answer = num1 * num2;
         }
 
-        // Helper to generate a plausible but incorrect repeated addition
-        function generateDistractor() {
-            let a, b;
-            do {
-                a = Phaser.Math.Between(2, 10);
-                b = Phaser.Math.Between(2, 10);
-            } while ((a === num1 && b === num2) || (a === num2 && b === num1) || a * b === answer);
-            return Array(b).fill(a).join('+');
-        }
-
-        // Build options: 1 correct, 3 distractors
-        const options = [correctOption];
+        // Generate answer options
+        const options = [answer]; // Start with correct answer
+        const usedAnswers = new Set([answer]);
+        
+        // Generate 3 incorrect answer options
         while (options.length < 4) {
-            let distractor = generateDistractor();
-            if (!options.includes(distractor)) {
-                options.push(distractor);
+            let wrongAnswer;
+            
+            if (use2x1) {
+                // For 2x1 digit questions, generate realistic wrong answers
+                const variation = Phaser.Math.Between(-20, 20);
+                wrongAnswer = answer + variation;
+                
+                // Ensure it's positive and different from existing answers
+                if (wrongAnswer <= 0 || usedAnswers.has(wrongAnswer)) {
+                    wrongAnswer = Phaser.Math.Between(answer - 30, answer + 30);
+                }
+            } else {
+                // For 1x1 digit questions, use nearby multiplication results
+                const wrongNum1 = Phaser.Math.Between(1, 9);
+                const wrongNum2 = Phaser.Math.Between(1, 9);
+                wrongAnswer = wrongNum1 * wrongNum2;
+                
+                // If it's the same as correct answer, modify it
+                if (wrongAnswer === answer) {
+                    wrongAnswer = answer + Phaser.Math.Between(-10, 10);
+                }
+            }
+            
+            // Ensure answer is positive and unique
+            if (wrongAnswer > 0 && !usedAnswers.has(wrongAnswer)) {
+                options.push(wrongAnswer);
+                usedAnswers.add(wrongAnswer);
             }
         }
+        
+        // Shuffle the options
         Phaser.Utils.Array.Shuffle(options);
 
-        // Create the new kid-friendly quiz dialog
-        this.createKidFriendlyQuizDialog(num1, num2, answer, correctOption, options);
+        // Create the quiz dialog with integer options
+        this.createKidFriendlyQuizDialog(num1, num2, answer, answer, options);
     }
 
     createKidFriendlyQuizDialog(num1, num2, answer, correctOption, options) {
@@ -1656,7 +2053,7 @@ class IsometricGridScene extends Phaser.Scene {
         const instructionText = this.add.text(
             this.cameras.main.width / 2,
             dialogY + 170,
-            'Choose the correct repeated addition:',
+            'Choose the correct answer:',
             {
                 fontSize: '18px',
                 color: '#FFE4B5',
@@ -1728,11 +2125,7 @@ class IsometricGridScene extends Phaser.Scene {
         const buttonWidth = dialogWidth - 100;
         let attempts = 0;
         const maxAttempts = 2;
-
-        const evaluateRepeatedAddition = (expression) => {
-            const parts = expression.split('+');
-            return parts.reduce((sum, num) => sum + parseInt(num), 0);
-        };
+        let answered = false; // Flag to track if an answer has been selected
 
         options.forEach((option, index) => {
             const buttonY = startY + index * (buttonHeight + buttonSpacing);
@@ -1766,7 +2159,7 @@ class IsometricGridScene extends Phaser.Scene {
             const buttonText = this.add.text(
                 this.cameras.main.width / 2,
                 buttonY + buttonHeight/2,
-                option,
+                option.toString(), // Convert number to string for display
                 {
                     fontSize: '20px',
                     color: '#FFFFFF',
@@ -1779,6 +2172,7 @@ class IsometricGridScene extends Phaser.Scene {
 
             // Hover effects
             buttonBg.on('pointerover', () => {
+                if (answered) return; // Don't show hover effects if already answered
                 buttonBg.clear();
                 buttonBg.fillGradientStyle(0x2980B9, 0x1A5276, 0x2980B9, 0x1A5276, 1);
                 buttonBg.fillRoundedRect(
@@ -1799,6 +2193,7 @@ class IsometricGridScene extends Phaser.Scene {
             });
 
             buttonBg.on('pointerout', () => {
+                if (answered) return; // Don't show hover effects if already answered
                 buttonBg.clear();
                 buttonBg.fillGradientStyle(0x3498DB, 0x2980B9, 0x3498DB, 0x2980B9, 1);
                 buttonBg.fillRoundedRect(
@@ -1820,10 +2215,20 @@ class IsometricGridScene extends Phaser.Scene {
 
             // Click handler
             buttonBg.on('pointerdown', () => {
-                this.sounds.button.play();
-                const result = evaluateRepeatedAddition(option);
+                // Prevent multiple clicks
+                if (answered) return;
+                answered = true;
                 
-                if (result === answer && option === correctOption) {
+                // Disable all buttons by removing their interactivity
+                this.quizContainer.list.forEach(child => {
+                    if (child.input) {
+                        child.disableInteractive();
+                    }
+                });
+                
+                this.sounds.button.play();
+                
+                if (option === answer) {
                     // Correct answer - celebrate and complete quiz
                     this.celebrateCorrectAnswer(buttonBg, buttonText);
                     this.time.delayedCall(2000, () => {
@@ -1880,10 +2285,11 @@ class IsometricGridScene extends Phaser.Scene {
             ease: 'Power2',
             onComplete: () => {
                 coin.destroy();
-                // Update coins after animation
-                        this.coins += 20;
-                uiScene.updateCoins(this.coins);
-                        this.sounds.correct.play();
+                // Always add exactly 20 coins - update both scenes to keep them in sync
+                this.coins += 20;
+                uiScene.coins += 20;
+                uiScene.updateCoins(uiScene.coins);
+                this.sounds.correct.play();
             }
         });
     }
@@ -1955,11 +2361,6 @@ class IsometricGridScene extends Phaser.Scene {
         });
     }
 
-    evaluateRepeatedAddition(expression) {
-        const parts = expression.split('+');
-        return parts.reduce((sum, num) => sum + parseInt(num), 0);
-    }
-
     showMessage(text, color) {
         const message = this.add.text(
             this.cameras.main.width / 2,
@@ -2019,7 +2420,7 @@ class IsometricGridScene extends Phaser.Scene {
         
         // Add message text with better styling
         const message = this.add.text(x + width/2, y + height/2, 
-            "Hey, I'm Athena\nDrag and drop an item\nto the ground", {
+            "Hey, I'm Link\nDrag and drop an item\nto the ground", {
             fontSize: '22px',
             color: '#FFFFFF',
             fontStyle: 'bold',
@@ -2558,15 +2959,12 @@ class IsometricGridScene extends Phaser.Scene {
         this.shopDialog.add(closeBtn);
 
         // Dragon Shop items grid - Dragon Theme
-        const iconKeys = ['fence', 'fence2', 'castle', 'hut', 'wall', 'wave-wall', 'tower1'];
+        const iconKeys = ['hut', 'shrine', 'temple', 'temple-u3'];
         const itemNames = {
-            fence: 'Dragon Fence',
-            fence2: 'Magic Barrier',
-            castle: 'Dragon Castle',
             hut: 'Dragon Hut',
-            wall: 'Dragon Wall',
-            'wave-wall': 'Wave Dragon Wall',
-            tower1: 'Dragon Tower'
+            shrine: 'Dragon Shrine',
+            temple: 'Temple',
+            'temple-u3': 'Legendary Temple'
         };
         
         const itemsPerRow = 4;
@@ -2953,6 +3351,73 @@ class IsometricGridScene extends Phaser.Scene {
         
         console.log('[DEBUG] Sprite rotated and deselected. New scaleX:', item.scaleX);
     }
+
+    calculatePopulation() {
+        let totalPopulation = 0;
+        
+        // Track unique items to avoid counting multi-tile items multiple times
+        const uniqueItems = new Set();
+        const itemCounts = {};
+        
+        // Initialize counters for all assets that have population values
+        Object.keys(this.assetConfig).forEach(key => {
+            if (this.assetConfig[key].population > 0) {
+                itemCounts[key] = 0;
+            }
+        });
+        
+        // Count unique placed items (avoid counting multi-tile items multiple times)
+        this.placedItems.forEach(item => {
+            // Use the item object reference as unique identifier
+            if (!uniqueItems.has(item)) {
+                uniqueItems.add(item);
+                const textureKey = item.textureKey;
+                if (itemCounts.hasOwnProperty(textureKey)) {
+                    itemCounts[textureKey]++;
+                }
+            }
+        });
+        
+        // Calculate total population using the new asset configuration
+        Object.keys(itemCounts).forEach(key => {
+            const count = itemCounts[key];
+            const populationBoost = this.assetConfig[key].population;
+            totalPopulation += count * populationBoost;
+        });
+        
+        this.population = totalPopulation;
+        
+        // Update UI scene with new population
+        const uiScene = this.scene.get('UIScene');
+        if (uiScene) {
+            uiScene.updatePopulation(this.population);
+        }
+        
+        return totalPopulation;
+    }
+
+    updatePopulation() {
+        this.calculatePopulation();
+    }
+
+    // Improved depth sorting for isometric view
+    // Primary sort: Y position (closer to bottom boundary = in front)
+    // Secondary sort: X position (closer to right boundary = in front) when Y values are very close
+    sortByIsometricDepth() {
+        this.gridLayer.list.sort((a, b) => {
+            // Simple approach: use actual sprite positions
+            // Primary sort by Y position (higher Y = closer to bottom = in front)
+            const yDiff = a.y - b.y;
+            
+            // If Y positions are very close (within 10 pixels), use X position as tiebreaker
+            if (Math.abs(yDiff) < 10) {
+                // Secondary sort by X position (higher X = closer to right = in front)
+                return a.x - b.x;
+            }
+            
+            return yDiff;
+        });
+    }
 }
 
 class UIScene extends Phaser.Scene {
@@ -2967,6 +3432,8 @@ class UIScene extends Phaser.Scene {
         this.shopDialog = null;
         this.firstZeroAssetShown = false; // Track if first zero asset message has been shown
         this.toggleBtnText = null; // Store reference to toggle button text
+        this.population = 0; // Track population
+        this.populationText = null; // Store reference to population text
     }
 
     init(data) {
@@ -2974,6 +3441,7 @@ class UIScene extends Phaser.Scene {
         this.tileSize = data.tileSize;
         this.iconConfig = data.iconConfig;
         this.coins = data.coins || 0;
+        this.population = data.population || 0;
         this.toolbarExpanded = true;
     }
 
@@ -3013,7 +3481,7 @@ class UIScene extends Phaser.Scene {
 
         this.input.on('pointermove', (pointer) => {
             if (this.parentScene.draggedItem) {
-                const pointerWorld = this.parentScene.getPointerWorldPosition(pointer);
+                const pointerWorld = this.parentScene.getPointerWorldPositionForTileSelection(pointer);
                 let closestTile = null;
                 let minDistance = Infinity;
                 for (const tile of this.parentScene.tiles) {
@@ -3049,7 +3517,7 @@ class UIScene extends Phaser.Scene {
 
     createToolbarPanel() {
         // Icon setup
-        const iconKeys = ['fence', 'fence2', 'castle', 'hut', 'wall', 'wave-wall', 'tower1'];
+        const iconKeys = ['hut', 'shrine', 'temple', 'temple-u3'];
         const iconSpacing = this.tileSize + 20; // Increased spacing for gaps between boxes
         const iconMargin = 16;
         const panelPadding = 12;
@@ -3357,6 +3825,206 @@ class UIScene extends Phaser.Scene {
         // Ensure toggle button is on top
         this.toolbarContainer.bringToTop(toggleBtnBg);
         this.toolbarContainer.bringToTop(this.toggleBtnText);
+        
+        // Add population counter next to the toggle button
+        this.createPopulationCounter(btnX, btnY, btnRadius);
+    }
+
+    createPopulationCounter(btnX, btnY, btnRadius) {
+        // Position the population counter at the top center of the screen
+        const popCounterX = this.cameras.main.width / 2;
+        const popCounterY = 50; // Top of the screen with some margin
+        
+        // Create population counter container - make it independent from toolbar
+        this.populationContainer = this.add.container(popCounterX, popCounterY);
+        this.populationContainer.setDepth(1001); // Above toolbar
+        // Don't add to toolbar container - make it standalone
+        
+        // Population counter background with gradient - make it bigger
+        const popBg = this.add.graphics();
+        
+        // Background shadow - larger
+        popBg.fillStyle(0x000000, 0.3);
+        popBg.fillRoundedRect(-60, -20, 120, 40, 20);
+        
+        // Main gradient background (purple to pink for population theme) - larger
+        popBg.fillGradientStyle(0x8E44AD, 0x9B59B6, 0xE91E63, 0xF39C12, 0.95);
+        popBg.fillRoundedRect(-62, -22, 120, 40, 20);
+        
+        // Inner highlight - larger
+        popBg.fillGradientStyle(0xFFFFFF, 0xFFFFFF, 0xE8E8E8, 0xE8E8E8, 0.2);
+        popBg.fillRoundedRect(-60, -20, 116, 36, 18);
+        
+        // Border with glow - larger
+        popBg.lineStyle(3, 0xFFFFFF, 0.8);
+        popBg.strokeRoundedRect(-62, -22, 120, 40, 20);
+        
+        this.populationContainer.add(popBg);
+        
+        // Population icon (people emoji) - larger
+        const popIcon = this.add.text(-35, 0, '👥', {
+            fontSize: '24px'
+        }).setOrigin(0.5);
+        this.populationContainer.add(popIcon);
+        
+        // Population text - larger
+        this.populationText = this.add.text(15, 0, this.population.toString(), {
+            fontSize: '20px',
+            color: '#FFFFFF',
+            fontStyle: 'bold',
+            fontFamily: 'Comic Sans MS, cursive, sans-serif',
+            stroke: '#2C3E50',
+            strokeThickness: 3
+        }).setOrigin(0.5);
+        this.populationContainer.add(this.populationText);
+        
+        // Add subtle pulsing animation
+        this.tweens.add({
+            targets: this.populationContainer,
+            alpha: 0.8,
+            duration: 2000,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut'
+        });
+        
+        // Make population counter interactive for tooltip - larger hit area
+        const hitArea = this.add.rectangle(0, 0, 120, 40);
+        hitArea.setInteractive({ useHandCursor: true });
+        this.populationContainer.add(hitArea);
+        
+        // Add hover effects and tooltip
+        hitArea.on('pointerover', () => {
+            this.showPopulationTooltip();
+        });
+        
+        hitArea.on('pointerout', () => {
+            this.hidePopulationTooltip();
+        });
+    }
+
+    showPopulationTooltip() {
+        if (this.populationTooltip) {
+            this.populationTooltip.destroy();
+        }
+        
+        // Calculate population breakdown using the new system
+        const uniqueItems = new Set();
+        const itemCounts = {};
+        
+        // Initialize counters for all assets that have population values
+        Object.keys(this.parentScene.assetConfig).forEach(key => {
+            if (this.parentScene.assetConfig[key].population > 0) {
+                itemCounts[key] = 0;
+            }
+        });
+        
+        // Count unique placed items from parent scene
+        this.parentScene.placedItems.forEach(item => {
+            if (!uniqueItems.has(item)) {
+                uniqueItems.add(item);
+                const textureKey = item.textureKey;
+                if (itemCounts.hasOwnProperty(textureKey)) {
+                    itemCounts[textureKey]++;
+                }
+            }
+        });
+        
+        // Create tooltip content with emojis for each building type
+        const buildingEmojis = {
+            hut: '🏠',
+            shrine: '⛩️',
+            temple: '🏛️',
+            legendary_temple: '🏯',
+            castle: '🏰',
+            tower1: '🗼'
+        };
+        
+        let tooltipText = 'City Population Breakdown:\n\n';
+        let hasBuildings = false;
+        
+        Object.keys(itemCounts).forEach(key => {
+            const count = itemCounts[key];
+            if (count > 0) {
+                hasBuildings = true;
+                const populationBoost = this.parentScene.assetConfig[key].population;
+                const emoji = buildingEmojis[key] || '🏢';
+                const name = key.charAt(0).toUpperCase() + key.slice(1).replace('_', ' ');
+                tooltipText += `${emoji} ${name}: ${count} × ${populationBoost} = ${count * populationBoost}\n`;
+            }
+        });
+        
+        if (!hasBuildings) {
+            tooltipText = 'Build huts and temples to\nincrease your city population!\n\n🏠 Hut = +5 population\n🏛️ Temple = +40 population';
+        } else {
+            tooltipText += `\nTotal Population: ${this.population}`;
+        }
+        
+        // Position tooltip above the population counter
+        const tooltipX = this.populationContainer.x;
+        const tooltipY = this.populationContainer.y - 60;
+        
+        // Create tooltip background
+        const tooltipBg = this.add.graphics();
+        const lines = tooltipText.split('\n');
+        const maxLineLength = Math.max(...lines.map(line => line.length));
+        const tooltipWidth = Math.max(200, maxLineLength * 8);
+        const tooltipHeight = lines.length * 16 + 20;
+        
+        // Tooltip shadow
+        tooltipBg.fillStyle(0x000000, 0.4);
+        tooltipBg.fillRoundedRect(tooltipX - tooltipWidth/2 + 2, tooltipY - tooltipHeight/2 + 2, tooltipWidth, tooltipHeight, 8);
+        
+        // Tooltip background
+        tooltipBg.fillGradientStyle(0x2C3E50, 0x34495E, 0x8E44AD, 0x9B59B6, 0.95);
+        tooltipBg.fillRoundedRect(tooltipX - tooltipWidth/2, tooltipY - tooltipHeight/2, tooltipWidth, tooltipHeight, 8);
+        
+        // Tooltip border
+        tooltipBg.lineStyle(2, 0xFFFFFF, 0.8);
+        tooltipBg.strokeRoundedRect(tooltipX - tooltipWidth/2, tooltipY - tooltipHeight/2, tooltipWidth, tooltipHeight, 8);
+        
+        // Tooltip text
+        const tooltipTextObj = this.add.text(tooltipX, tooltipY, tooltipText, {
+            fontSize: '12px',
+            color: '#FFFFFF',
+            fontStyle: 'bold',
+            fontFamily: 'Comic Sans MS, cursive, sans-serif',
+            align: 'center',
+            stroke: '#2C3E50',
+            strokeThickness: 1
+        }).setOrigin(0.5);
+        
+        // Create tooltip container
+        this.populationTooltip = this.add.container(0, 0);
+        this.populationTooltip.add(tooltipBg);
+        this.populationTooltip.add(tooltipTextObj);
+        this.populationTooltip.setDepth(2000);
+        
+        // Entrance animation
+        this.populationTooltip.setScale(0);
+        this.tweens.add({
+            targets: this.populationTooltip,
+            scaleX: 1,
+            scaleY: 1,
+            duration: 200,
+            ease: 'Back.easeOut'
+        });
+    }
+
+    hidePopulationTooltip() {
+        if (this.populationTooltip) {
+            this.tweens.add({
+                targets: this.populationTooltip,
+                scaleX: 0,
+                scaleY: 0,
+                duration: 150,
+                ease: 'Power2',
+                onComplete: () => {
+                    this.populationTooltip.destroy();
+                    this.populationTooltip = null;
+                }
+            });
+        }
     }
 
     updateSpriteCounter(textureKey, newCount) {
@@ -3434,6 +4102,23 @@ class UIScene extends Phaser.Scene {
         this.coinText.setText(this.coins.toString());
     }
 
+    updatePopulation(newPopulation) {
+        this.population = newPopulation;
+        if (this.populationText) {
+            this.populationText.setText(this.population.toString());
+            
+            // Add a small bounce animation when population changes
+            this.tweens.add({
+                targets: this.populationText,
+                scaleX: 1.3,
+                scaleY: 1.3,
+                duration: 200,
+                ease: 'Power2',
+                yoyo: true
+            });
+        }
+    }
+
     handleResize(gameSize) {
         // Update coin display position (keep same margin as above)
         const coinMarginRight = 180;
@@ -3449,7 +4134,7 @@ class UIScene extends Phaser.Scene {
 
         // Update pixie position
         if (this.pixieImage) {
-            this.pixieImage.setPosition(100, gameSize.height - 150);
+            this.pixieImage.setPosition(100, gameSize.height - 1000);
         }
     }
 
@@ -3602,7 +4287,7 @@ class UIScene extends Phaser.Scene {
         this.shopDialog.add(closeBtn);
 
         // Shop items grid - Market Stall Style
-        const iconKeys = ['fence', 'fence2', 'castle', 'hut', 'wall', 'wave-wall', 'tower1'];
+        const iconKeys = ['hut', 'shrine', 'temple', 'temple-u3'];
         const itemsPerRow = 4;
         const itemCellWidth = 110;
         const itemCellHeight = 130;
