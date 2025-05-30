@@ -65,18 +65,8 @@ class IsometricGridScene extends Phaser.Scene {
         this.gridColors = [...config.gridColors];
         this.gridOffsets = [...config.gridOffsets];
         
-        // Cloud system properties (always visible, independent of grid layers)
-        this.clouds = []; // Array to hold active clouds
-        this.cloudSpawnTimer = config.cloudSpawnTimer;
-        this.cloudSpawnInterval = config.cloudSpawnInterval;
-        this.maxClouds = config.maxClouds;
-        this.cloudContainer = null; // Container for all clouds
-        
-        // Cloud appearance configuration
-        this.cloudScaleMin = config.cloudScaleMin;
-        this.cloudScaleMax = config.cloudScaleMax;
-        this.cloudAlphaMin = config.cloudAlphaMin;
-        this.cloudAlphaMax = config.cloudAlphaMax;
+        // Initialize Cloud System
+        this.cloudSystem = new CloudSystem(this, config);
         
         // Audio instances
         this.sounds = {
@@ -164,10 +154,6 @@ class IsometricGridScene extends Phaser.Scene {
         // Set the primary grid layer reference for compatibility
         this.gridLayer = this.gridLayers[this.currentGridLayer];
         
-        // Create a separate cloud container that's always visible
-        this.cloudContainer = this.add.container(0, 0);
-        this.cloudContainer.setDepth(50); // Above grid but below UI elements
-
         // Add pixie image to bottom left corner
         this.pixieImage = this.add.image(100, this.cameras.main.height - 150, 'pixie');
         this.pixieImage.setScale(2); // Increased scale for better visibility
@@ -205,7 +191,7 @@ class IsometricGridScene extends Phaser.Scene {
             });
 
             // Initialize cloud system
-            this.initializeCloudSystem();
+            this.cloudSystem.initialize();
             
             // Show welcome message
             this.showWelcomeMessage();
@@ -245,11 +231,7 @@ class IsometricGridScene extends Phaser.Scene {
                     }
                     
                     // Apply zoom to cloud container as well
-                    if (this.cloudContainer) {
-                        this.cloudContainer.setScale(this.zoomLevel);
-                        this.cloudContainer.x = this.gridLayer.x;
-                        this.cloudContainer.y = this.gridLayer.y;
-                    }
+                    this.cloudSystem.updateZoom(this.zoomLevel, this.gridLayer.x, this.gridLayer.y);
                 }
             });
         });
@@ -384,11 +366,7 @@ class IsometricGridScene extends Phaser.Scene {
         }
         
         // Reset cloud container
-        if (this.cloudContainer) {
-            this.cloudContainer.setScale(1);
-            this.cloudContainer.x = 0;
-            this.cloudContainer.y = 0;
-        }
+        this.cloudSystem.resetPosition();
     }
 
     createDeleteZone() {
@@ -625,119 +603,8 @@ class IsometricGridScene extends Phaser.Scene {
     }
 
     // ===== CLOUD SYSTEM =====
-    initializeCloudSystem() {
-        // Create a timer event for cloud spawning
-        this.cloudTimer = this.time.addEvent({
-            delay: this.cloudSpawnInterval,
-            callback: this.spawnCloud,
-            callbackScope: this,
-            loop: true
-        });
-        
-        // Spawn the first cloud immediately
-        this.spawnCloud();
-    }
-    
-    spawnCloud() {
-        if (this.clouds.length >= this.maxClouds) return;
-        
-        // Spawn clouds across the complete screen area
-        // Choose randomly between spawning from right edge or bottom edge
-        const spawnFromRightEdge = Math.random() < 0.5;
-        
-        let startX, startY;
-        
-        if (spawnFromRightEdge) {
-            // Spawn from right edge - cover full height of screen
-            startX = this.cameras.main.width + 100; // Start off-screen right
-            startY = Math.random() * this.cameras.main.height; // Random Y across full screen height
-        } else {
-            // Spawn from bottom edge - cover full width of screen
-            startX = Math.random() * this.cameras.main.width; // Random X across full screen width
-            startY = this.cameras.main.height + 100; // Start off-screen bottom
-        }
-        
-        // Calculate end position using the exact isometric grid angle (26.57°)
-        // tan(26.57°) = 0.5, so for every 2 units left, move 1 unit up
-        const horizontalDistance = startX + 250; // Total horizontal distance to travel
-        const verticalDistance = horizontalDistance * 0.5; // Using tan(26.57°) = 0.5
-        
-        const endX = -250; // End off-screen left
-        const endY = startY - verticalDistance; // Move up by the calculated vertical distance
-        
-        // Create cloud sprite
-        const cloud = this.add.image(startX, startY, 'cloud');
-        
-        // Varied sizes while maintaining aspect ratio (uniform scaling)
-        const scale = this.cloudScaleMin + Math.random() * (this.cloudScaleMax - this.cloudScaleMin);
-        cloud.setScale(scale); // This maintains aspect ratio
-        
-        // Varied transparency for depth effect
-        const alpha = this.cloudAlphaMin + Math.random() * (this.cloudAlphaMax - this.cloudAlphaMin);
-        cloud.setAlpha(alpha);
-        
-        // Add cloud to the separate cloud container (always visible)
-        this.cloudContainer.add(cloud);
-        
-        // Add to clouds array
-        this.clouds.push(cloud);
-        
-        // Calculate movement duration based on distance
-        const distance = Phaser.Math.Distance.Between(startX, startY, endX, endY);
-        const duration = distance * 8 + Math.random() * 2000; // Slight speed variation
-        
-        // Animate cloud movement from bottom-right to top-left
-        this.tweens.add({
-            targets: cloud,
-            x: endX,
-            y: endY,
-            duration: duration,
-            ease: 'Linear',
-            onComplete: () => {
-                // Remove cloud when it reaches the end
-                this.removeCloud(cloud);
-            }
-        });
-        
-        console.log(`Spawned cloud at (${Math.round(startX)}, ${Math.round(startY)}), total clouds: ${this.clouds.length}`);
-    }
-    
-    removeCloud(cloud) {
-        // Remove from clouds array
-        const index = this.clouds.indexOf(cloud);
-        if (index > -1) {
-            this.clouds.splice(index, 1);
-        }
-        
-        // Destroy the cloud sprite
-        if (cloud && !cloud.destroyed) {
-            cloud.destroy();
-        }
-        
-        console.log(`Removed cloud, remaining clouds: ${this.clouds.length}`);
-    }
-    
-    cleanupCloudSystem() {
-        // Remove cloud timer
-        if (this.cloudTimer) {
-            this.cloudTimer.destroy();
-            this.cloudTimer = null;
-        }
-        
-        // Remove all clouds
-        this.clouds.forEach(cloud => {
-            if (cloud && !cloud.destroyed) {
-                cloud.destroy();
-            }
-        });
-        this.clouds = [];
-        
-        // Destroy cloud container
-        if (this.cloudContainer && !this.cloudContainer.destroyed) {
-            this.cloudContainer.destroy();
-            this.cloudContainer = null;
-        }
-    }
+    // Cloud functionality has been moved to the CloudSystem class
+    // The cloud system is initialized in the create() method with this.cloudSystem.initialize()
 
     // ===== DRAG & DROP SYSTEM =====
     getPointerWorldPosition(pointer) {
