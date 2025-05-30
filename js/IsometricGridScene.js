@@ -405,7 +405,7 @@ class IsometricGridScene extends Phaser.Scene {
             hut: 5,           // Each hut gives +5 population
             shrine: 20,       // Each shrine gives +20 population (to be added)
             temple: 40,       // Each mini time temple gives +40 population
-            legendary_temple: 100  // Each legendary time temple gives +100 population (to be added)
+            legendary_temple: 70  // Each legendary time temple gives +100 population (to be added)
         };
         
         // Level system
@@ -492,14 +492,14 @@ class IsometricGridScene extends Phaser.Scene {
                 scale: 1.4,
                 tileSpan: 2,
                 population: 40,       // 🏠 Population boost (EDIT THIS)
-                price: 300,          // 💰 Shop price (EDIT THIS)
-                initialCount: 1      // 📦 Starting inventory (EDIT THIS)
+                price: 200,          // 💰 Shop price (EDIT THIS)
+                initialCount: 0      // 📦 Starting inventory (EDIT THIS)
             },
             'temple-u1': {
                 yOffset: this.tileSize / 4 + 35,
                 scale: 1.6,
                 tileSpan: 3,
-                population: 100,      // 🏠 Population boost (EDIT THIS)
+                population: 70,      // 🏠 Population boost (EDIT THIS)
                 price: 500,          // 💰 Shop price (EDIT THIS)
                 initialCount: 0,     // 📦 Starting inventory (available for purchase but locked until level 1)
                 requiresLevel: 1     // Level required to use this item
