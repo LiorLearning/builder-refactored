@@ -27,7 +27,6 @@ class LoadingScene extends Phaser.Scene {
         this.load.image('wall', 'assets/wall.png');
         this.load.image('temple', 'assets/temple.png');
         this.load.image('shrine', 'assets/shrine.png');
-        this.load.image('shrine-u1', 'assets/shrine-u1.png');
         this.load.image('temple-u1', 'assets/temple-u1.png');
         this.load.image('tower1', 'assets/tower1.png');
         this.load.image('coin', 'assets/coin.png');
@@ -409,9 +408,9 @@ class IsometricGridScene extends Phaser.Scene {
         };
         
         // Level system
-        this.currentLevel = 0; // Track current level (0 = starting, 1 = after first 150 population)
-        this.level1Unlocked = false; // Track if level 1 upgrades have been unlocked
-        this.level2Completed = false; // Track if level 2 has been completed
+        this.currentLevel = 0; // Track current level (0 = starting, 1 = after first 150 population, 2 = after 300 population)
+        this.level1Unlocked = false; // Track if level 1 has been unlocked (150 population)
+        this.level2Unlocked = false; // Track if level 2 upgrades have been unlocked (300 population)
         this.maxPopulationReached = 0; // Track the highest population reached
         
         // Multi-grid system properties
@@ -457,7 +456,7 @@ class IsometricGridScene extends Phaser.Scene {
                 // Game mechanics
                 population: 10,       // 🏠 Population boost (EDIT THIS)
                 price: 50,           // 💰 Shop price (EDIT THIS)
-                initialCount: 2      // 📦 Starting inventory (EDIT THIS)
+                initialCount: 20      // 📦 Starting inventory (EDIT THIS)
             },
             'hut-u1': {
                 // Display properties
@@ -467,8 +466,7 @@ class IsometricGridScene extends Phaser.Scene {
                 // Game mechanics
                 population: 15,       // 🏠 Population boost (EDIT THIS)
                 price: 75,           // 💰 Shop price (EDIT THIS)
-                initialCount: 2,     // 📦 Starting inventory (available for purchase but locked until level 1)
-                requiresLevel: 1     // Level required to use this item
+                initialCount: 10      // 📦 Starting inventory (LOCKED - unlocked at level 1)
             },
             shrine: {
                 yOffset: this.tileSize / 4 + 28,
@@ -476,16 +474,7 @@ class IsometricGridScene extends Phaser.Scene {
                 tileSpan: 2,
                 population: 20,       // 🏠 Population boost (EDIT THIS)
                 price: 150,          // 💰 Shop price (EDIT THIS)
-                initialCount: 1      // 📦 Starting inventory (EDIT THIS)
-            },
-            'shrine-u1': {
-                yOffset: this.tileSize / 4 + 20,
-                scale: 1.1,
-                tileSpan: 2,
-                population: 35,       // 🏠 Population boost (EDIT THIS)
-                price: 250,          // 💰 Shop price (EDIT THIS)
-                initialCount: 0,     // 📦 Starting inventory (available for purchase but locked until level 1)
-                requiresLevel: 1     // Level required to use this item
+                initialCount: 10      // 📦 Starting inventory (EDIT THIS)
             },
             temple: {
                 yOffset: this.tileSize / 4 + 28,
@@ -493,7 +482,7 @@ class IsometricGridScene extends Phaser.Scene {
                 tileSpan: 2,
                 population: 40,       // 🏠 Population boost (EDIT THIS)
                 price: 300,          // 💰 Shop price (EDIT THIS)
-                initialCount: 1      // 📦 Starting inventory (EDIT THIS)
+                initialCount: 10      // 📦 Starting inventory (EDIT THIS)
             },
             'temple-u1': {
                 yOffset: this.tileSize / 4 + 35,
@@ -501,8 +490,7 @@ class IsometricGridScene extends Phaser.Scene {
                 tileSpan: 3,
                 population: 100,      // 🏠 Population boost (EDIT THIS)
                 price: 500,          // 💰 Shop price (EDIT THIS)
-                initialCount: 0,     // 📦 Starting inventory (available for purchase but locked until level 1)
-                requiresLevel: 1     // Level required to use this item
+                initialCount: 10      // 📦 Starting inventory (LOCKED - unlocked at level 1)
             }
         };
         
@@ -527,7 +515,1813 @@ class IsometricGridScene extends Phaser.Scene {
         
         // Initialize sprite counters for each icon type
         this.spriteCounters = new Map();
-        const iconKeys = ['hut', 'hut-u1', 'shrine', 'shrine-u1', 'temple', 'temple-u1'];
+        const iconKeys = ['hut', 'hut-u1', 'shrine', 'temple', 'temple-u1'];
+        iconKeys.forEach(key => {
+            this.spriteCounters.set(key, this.spriteInitialCounts[key]); // Use individual initial counts
+        });
+    }
+
+    // ===== PHASER LIFECYCLE =====
+    preload() {
+        // Assets are now loaded in LoadingScene
+    }
+
+    create() {
+        // Initialize audio
+        this.sounds.bgm = this.sound.add('bgm', { loop: true, volume: 0.5 });
+        this.sounds.button = this.sound.add('button', { volume: 0.7 });
+        this.sounds.correct = this.sound.add('correct', { volume: 0.7 });
+        this.sounds.pop = this.sound.add('pop', { volume: 0.7 });
+        this.sounds.shop = this.sound.add('shop', { volume: 0.7 });
+
+        // Start background music
+        this.sounds.bgm.play();
+
+        // Create a background container that will zoom and pan with the grid
+        this.backgroundContainer = this.add.container(0, 0);
+        this.backgroundContainer.setDepth(-1000);
+
+        // Add the background image to the background container
+        const bg = this.add.image(0, 0, 'ground');
+        bg.setOrigin(0, 0);
+        bg.setDisplaySize(this.cameras.main.width, this.cameras.main.height);
+        this.backgroundContainer.add(bg);
+        
+        // Create three grid layers with different vertical offsets
+        for (let i = 0; i < 3; i++) {
+            const gridLayer = this.add.container(0, this.gridOffsets[i]);
+            gridLayer.setVisible(i === this.currentGridLayer); // Only show the current grid layer
+            this.gridLayers.push(gridLayer);
+            
+            // Initialize arrays for this grid layer
+            this.gridTiles[i] = [];
+            this.gridTileStates[i] = new Map();
+        }
+        
+        // Set the primary grid layer reference for compatibility
+        this.gridLayer = this.gridLayers[this.currentGridLayer];
+        
+        // Create a separate cloud container that's always visible
+        this.cloudContainer = this.add.container(0, 0);
+        this.cloudContainer.setDepth(50); // Above grid but below UI elements
+
+        // Add pixie image to bottom left corner
+        this.pixieImage = this.add.image(100, this.cameras.main.height - 150, 'pixie');
+        this.pixieImage.setScale(2); // Increased scale for better visibility
+        this.pixieImage.setDepth(2000); // Ensure it's above other elements
+
+        // Load restricted tiles before creating the grid
+        this.loadRestrictedTiles().then(() => {
+            // Create grids for all three layers
+            this.createAllGrids();
+
+            // Launch UI scene
+            this.scene.launch('UIScene', { 
+                parentScene: this,
+                tileSize: this.tileSize,
+                iconConfig: this.iconConfig,
+                coins: this.coins,
+                population: this.population
+            });
+
+            // Calculate initial population
+            this.updatePopulation();
+
+            // Add reset zoom button to top right
+            this.createResetZoomButton();
+
+            // Handle window resize
+            this.scale.on('resize', this.handleResize, this);
+
+            // Add spacebar event listener for quiz
+            this.input.keyboard.on('keydown-SPACE', () => {
+                if (!this.quizActive) { // Only show quiz if no quiz is currently active
+                    this.quizActive = true;
+                    this.showQuizDialog();
+                }
+            });
+
+            // Initialize cloud system
+            this.initializeCloudSystem();
+            
+            // Show welcome message
+            this.showWelcomeMessage();
+
+            // Add wheel event listener for zoom
+            this.input.on('wheel', (pointer, gameObjects, deltaX, deltaY, deltaZ) => {
+                const zoomDelta = deltaY > 0 ? -0.1 : 0.1;
+                const newZoom = Phaser.Math.Clamp(this.zoomLevel + zoomDelta, this.minZoom, this.maxZoom);
+                
+                if (newZoom !== this.zoomLevel) {
+                    // Get world point under pointer before zoom
+                    const worldX = (pointer.x - this.gridLayer.x) / this.zoomLevel;
+                    const worldY = (pointer.y - this.gridLayer.y) / this.zoomLevel;
+
+                    this.zoomLevel = newZoom;
+                    
+                    // Apply zoom to all grid layers, but only adjust position for visible layer
+                    this.gridLayers.forEach((layer, index) => {
+                        layer.setScale(this.zoomLevel);
+                        if (index === this.currentGridLayer) {
+                            // After scaling, adjust gridLayer position so the point under the cursor stays fixed
+                            layer.x = pointer.x - worldX * this.zoomLevel;
+                            layer.y = pointer.y - worldY * this.zoomLevel;
+                        } else {
+                            // Keep other layers aligned with the current layer
+                            layer.x = this.gridLayer.x;
+                            layer.y = this.gridLayer.y;
+                        }
+                    });
+                    
+                    // Apply zoom to background container to keep it aligned with grid
+                    if (this.backgroundContainer) {
+                        this.backgroundContainer.setScale(this.zoomLevel);
+                        // Always align background with layer 0 (green layer) since restricted tiles are only there
+                        this.backgroundContainer.x = this.gridLayers[0].x;
+                        this.backgroundContainer.y = this.gridLayers[0].y;
+                    }
+                    
+                    // Apply zoom to cloud container as well
+                    if (this.cloudContainer) {
+                        this.cloudContainer.setScale(this.zoomLevel);
+                        this.cloudContainer.x = this.gridLayer.x;
+                        this.cloudContainer.y = this.gridLayer.y;
+                    }
+                }
+            });
+        });
+
+        // Create delete zone in bottom right corner
+        this.createDeleteZone();
+
+        // Add developer mode key sequence handler
+        this.input.keyboard.on('keydown', (event) => {
+            // Handle developer mode sequence
+            if (this.devModeTimeout) {
+                clearTimeout(this.devModeTimeout);
+            }
+            this.devModeKeySequence += event.key;
+            this.devModeTimeout = setTimeout(() => {
+                this.devModeKeySequence = '';
+            }, 2000);
+
+            if (this.devModeKeySequence === '12345') {
+                this.toggleDeveloperMode();
+                this.devModeKeySequence = '';
+            }
+
+            // Handle developer mode commands
+            if (this.developerMode) {
+                if (event.key === 'r' || event.key === 'R') {
+                    this.toggleRestrictionMode();
+                } else if (event.key === 's' || event.key === 'S') {
+                    this.saveRestrictedTiles();
+                } else if (event.key === 'g' || event.key === 'G') {
+                    // Developer mode: toggle grid with 'G'
+                    this.showGrid = !this.showGrid;
+                    this.updateGridAndItems();
+                    this.showMessage(this.showGrid ? 'Grid ON' : 'Grid OFF', '#ffff00');
+                } else if (event.key === 'l' || event.key === 'L') {
+                    // Developer mode: switch between grid layers with 'L'
+                    this.switchGridLayer();
+                }
+            }
+        });
+    }
+
+    // ===== GRID/TILE SYSTEM =====
+    createResetZoomButton() {
+        const buttonSize = 44;
+        const margin = 20;
+        const btnX = this.cameras.main.width - buttonSize / 2 - margin;
+        const btnY = buttonSize / 2 + margin;
+
+        // Create a container for the button
+        this.resetZoomButton = this.add.container(btnX, btnY);
+        this.resetZoomButton.setDepth(2000);
+
+        // Button background (circle)
+        const bg = this.add.graphics();
+        bg.fillStyle(0x444444, 1);
+        bg.lineStyle(2, 0xffffff, 0.8);
+        bg.fillCircle(0, 0, buttonSize / 2);
+        bg.strokeCircle(0, 0, buttonSize / 2);
+        this.resetZoomButton.add(bg);
+
+        // Button text
+        const txt = this.add.text(0, 0, '⟳', {
+            fontSize: '28px',
+            color: '#fff',
+            fontStyle: 'bold',
+        }).setOrigin(0.5);
+        this.resetZoomButton.add(txt);
+
+        // Make button interactive
+        bg.setInteractive(new Phaser.Geom.Circle(0, 0, buttonSize / 2), Phaser.Geom.Circle.Contains);
+        bg.on('pointerdown', () => {
+            this.resetZoomAndPosition();
+        });
+
+        // Create mute button below reset button
+        const muteBtnY = btnY + buttonSize + 10; // 10 pixels below reset button
+        this.muteButton = this.add.container(btnX, muteBtnY);
+        this.muteButton.setDepth(2000);
+
+        // Mute button background
+        const muteBg = this.add.graphics();
+        muteBg.fillStyle(0x444444, 1);
+        muteBg.lineStyle(2, 0xffffff, 0.8);
+        muteBg.fillCircle(0, 0, buttonSize / 2);
+        muteBg.strokeCircle(0, 0, buttonSize / 2);
+        this.muteButton.add(muteBg);
+
+        // Mute button text
+        const muteTxt = this.add.text(0, 0, '🔊', {
+            fontSize: '24px',
+            color: '#fff',
+            fontStyle: 'bold',
+        }).setOrigin(0.5);
+        this.muteButton.add(muteTxt);
+
+        // Make mute button interactive
+        muteBg.setInteractive(new Phaser.Geom.Circle(0, 0, buttonSize / 2), Phaser.Geom.Circle.Contains);
+        muteBg.on('pointerdown', () => {
+            this.toggleMute();
+            muteTxt.setText(this.isMuted ? '🔇' : '🔊');
+        });
+
+        // Adjust position on resize
+        this.scale.on('resize', (gameSize) => {
+            this.resetZoomButton.setPosition(
+                gameSize.width - buttonSize / 2 - margin,
+                buttonSize / 2 + margin
+            );
+            this.muteButton.setPosition(
+                gameSize.width - buttonSize / 2 - margin,
+                buttonSize / 2 + margin + buttonSize + 10
+            );
+        });
+    }
+
+    resetZoomAndPosition() {
+        this.zoomLevel = 1;
+        // Reset all grid layers
+        this.gridLayers.forEach((layer, index) => {
+            layer.setScale(1);
+            layer.x = 0;
+            layer.y = this.gridOffsets[index]; // Set to the original offset for each layer
+        });
+        
+        // Reset background container
+        if (this.backgroundContainer) {
+            this.backgroundContainer.setScale(1);
+            // Always align background with layer 0 (green layer) since restricted tiles are only there
+            this.backgroundContainer.x = 0;
+            this.backgroundContainer.y = this.gridOffsets[0]; // Layer 0 offset (which is 0)
+        }
+        
+        // Reset cloud container
+        if (this.cloudContainer) {
+            this.cloudContainer.setScale(1);
+            this.cloudContainer.x = 0;
+            this.cloudContainer.y = 0;
+        }
+    }
+
+    createDeleteZone() {
+        const deleteZoneSize = 120;
+        const margin = 20;
+        const deleteZoneX = this.cameras.main.width - deleteZoneSize - margin;
+        const deleteZoneY = this.cameras.main.height - deleteZoneSize - margin;
+
+        // Create delete zone container
+        this.deleteZone = this.add.container(deleteZoneX + deleteZoneSize/2, deleteZoneY + deleteZoneSize/2);
+        this.deleteZone.setDepth(1500);
+
+        // Background circle (initially subtle)
+        this.deleteZoneBg = this.add.graphics();
+        this.deleteZoneBg.fillStyle(0x444444, 0.6);
+        this.deleteZoneBg.lineStyle(3, 0xff4444, 0.8);
+        this.deleteZoneBg.fillCircle(0, 0, deleteZoneSize/2);
+        this.deleteZoneBg.strokeCircle(0, 0, deleteZoneSize/2);
+        this.deleteZone.add(this.deleteZoneBg);
+
+        // Trash can icon (using text for simplicity)
+        this.deleteZoneIcon = this.add.text(0, 0, '🗑️', {
+            fontSize: '48px',
+            color: '#ffffff'
+        }).setOrigin(0.5);
+        this.deleteZone.add(this.deleteZoneIcon);
+
+        // "Delete" text
+        this.deleteZoneText = this.add.text(0, 35, 'Delete', {
+            fontSize: '16px',
+            color: '#ffffff',
+            fontStyle: 'bold'
+        }).setOrigin(0.5);
+        this.deleteZone.add(this.deleteZoneText);
+
+        // Store delete zone bounds for collision detection
+        this.deleteZoneBounds = {
+            x: deleteZoneX,
+            y: deleteZoneY,
+            width: deleteZoneSize,
+            height: deleteZoneSize
+        };
+
+        // Handle window resize
+        this.scale.on('resize', (gameSize) => {
+            const newX = gameSize.width - deleteZoneSize - margin;
+            const newY = gameSize.height - deleteZoneSize - margin;
+            this.deleteZone.setPosition(newX + deleteZoneSize/2, newY + deleteZoneSize/2);
+            this.deleteZoneBounds.x = newX;
+            this.deleteZoneBounds.y = newY;
+        });
+
+        // Add subtle pulse animation to make delete zone more noticeable
+        this.tweens.add({
+            targets: this.deleteZone,
+            alpha: 0.7,
+            duration: 2000,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut'
+        });
+    }
+
+    handleResize(gameSize) {
+        // Update coin display position (keep same margin as above)
+        const coinMarginRight = 180;
+        if (this.coinText) {
+            this.coinText.setPosition(gameSize.width - coinMarginRight + 30, 30);
+        }
+
+        // Update shop icon position
+        const shopIcon = this.children.list.find(child => child.texture && child.texture.key === 'shop');
+        if (shopIcon) {
+            shopIcon.setPosition(gameSize.width - coinMarginRight - 50, 30);
+        }
+
+        // Update population bar positioning
+        if (this.populationContainer && this.populationBarBg && this.populationBarFill) {
+            // Recalculate bar dimensions
+            const toolbarRightEdge = 20 + 200;
+            const shopLeftEdge = gameSize.width - coinMarginRight - 50 - 25;
+            const newBarX = toolbarRightEdge + 20;
+            const newBarWidth = shopLeftEdge - newBarX - 20;
+            
+            // Store new dimensions
+            this.barX = newBarX;
+            this.barWidth = newBarWidth;
+            
+            // Recreate the population bar with new dimensions
+            this.populationContainer.destroy();
+            const btnX = 0; // Not used in new implementation
+            const btnY = 0; // Not used in new implementation  
+            const btnRadius = 0; // Not used in new implementation
+            this.createPopulationCounter(btnX, btnY, btnRadius);
+        }
+
+        // Update pixie position
+        if (this.pixieImage) {
+            this.pixieImage.setPosition(100, gameSize.height - 1000);
+        }
+    }
+
+    createAllGrids() {
+        // Create grids for all three layers
+        for (let layerIndex = 0; layerIndex < 3; layerIndex++) {
+            this.createGrid(layerIndex);
+        }
+        
+        // Maintain compatibility with existing code
+        this.tiles = this.gridTiles[this.currentGridLayer];
+        this.tileStates = this.gridTileStates[this.currentGridLayer];
+    }
+
+    createGrid(layerIndex = 0) {
+        const tileW = this.tileSize;
+        const tileH = this.tileSize / 2;
+
+        // Create a fixed large grid area to ensure all tiles are always in memory
+        // This ensures restricted tiles are preserved when panning/zooming
+        const maxTiles = 50; // Fixed large area instead of screen-dependent
+
+        // Center the grid horizontally and vertically
+        const gridStartX = this.cameras.main.width / 2;
+        const gridStartY = this.cameras.main.height / 2;
+
+        this.gridTiles[layerIndex] = [];
+        let restrictedCount = 0; // Debug counter
+        let checkedTiles = []; // Track tiles we check
+        let foundRestrictedSamples = []; // Sample of found restricted tiles
+        
+        console.log(`Starting grid creation for layer ${layerIndex}...`);
+        console.log('restrictedTiles Set size at grid creation:', this.restrictedTiles.size);
+        
+        for (let row = -maxTiles; row < maxTiles; row++) {
+            for (let col = -maxTiles; col < maxTiles; col++) {
+                const x = gridStartX + (col - row) * (tileW / 2);
+                const y = gridStartY + (col + row) * (tileH / 2);
+                
+                // Create all tiles in the grid area (removed screen bounds check)
+                const tile = this.add.graphics();
+                this.gridLayers[layerIndex].add(tile);
+                
+                const tileKey = `${row},${col}`;
+                const isRestricted = layerIndex === 0 && this.restrictedTiles.has(tileKey); // Only apply restrictions to green layer
+                
+                // Debug: Track some specific tiles
+                if (["-18,-6", "-19,-6", "-20,-6", "-5,5", "0,0"].includes(tileKey)) {
+                    checkedTiles.push({key: tileKey, restricted: isRestricted});
+                }
+                
+                // Debug: Count restricted tiles and collect samples
+                if (isRestricted) {
+                    restrictedCount++;
+                    if (foundRestrictedSamples.length < 10) {
+                        foundRestrictedSamples.push(tileKey);
+                    }
+                }
+                
+                this.gridTileStates[layerIndex].set(tileKey, {
+                    isHovered: false,
+                    isSelected: false,
+                    isRestricted: isRestricted
+                });
+                
+                // Only draw tiles that are visible on screen for performance
+                const isVisible = !(
+                    x + tileW / 2 < 0 || x - tileW / 2 > this.cameras.main.width ||
+                    y + tileH / 2 < 0 || y - tileH / 2 > this.cameras.main.height
+                );
+                
+                if (isVisible) {
+                    this.drawTile(tile, x, y, false, false, this.gridTileStates[layerIndex].get(tileKey).isRestricted, tileKey, layerIndex);
+                }
+
+                // Diamond-shaped hit area
+                const diamond = new Phaser.Geom.Polygon([
+                    x, y - tileH / 2, // Top
+                    x + tileW / 2, y, // Right
+                    x, y + tileH / 2, // Bottom
+                    x - tileW / 2, y  // Left
+                ]);
+                tile.setInteractive(diamond, Phaser.Geom.Polygon.Contains);
+
+                // Store tile information
+                const tileInfo = { graphics: tile, x: x, y: y, row: row, col: col, layerIndex: layerIndex };
+                this.gridTiles[layerIndex].push(tileInfo);
+
+                // Add event handlers
+                this.setupTileEventHandlers(tileInfo);
+            }
+        }
+        
+        console.log(`Grid layer ${layerIndex} created with ${restrictedCount} restricted tiles out of ${this.gridTiles[layerIndex].length} total tiles`);
+        console.log('Checked specific tiles:', checkedTiles);
+        console.log('Found restricted samples:', foundRestrictedSamples);
+    }
+
+    setupTileEventHandlers(tileInfo) {
+        const tileKey = `${tileInfo.row},${tileInfo.col}`;
+        const layerIndex = tileInfo.layerIndex;
+        const state = this.gridTileStates[layerIndex].get(tileKey);
+
+        tileInfo.graphics.on('pointerover', () => {
+            // Only show hover effect if tile is not restricted in normal mode
+            if (!state.isRestricted || this.developerMode) {
+                state.isHovered = true;
+                this.drawTile(tileInfo.graphics, tileInfo.x, tileInfo.y, 
+                    state.isHovered, state.isSelected, state.isRestricted, tileKey, layerIndex);
+            }
+        });
+
+        tileInfo.graphics.on('pointerout', () => {
+            state.isHovered = false;
+            this.drawTile(tileInfo.graphics, tileInfo.x, tileInfo.y, 
+                state.isHovered, state.isSelected, state.isRestricted, tileKey, layerIndex);
+        });
+
+        tileInfo.graphics.on('pointerdown', () => {
+            if (this.restrictionMode && layerIndex === 0) {
+                // Handle restriction mode - only allow on green layer
+                state.isRestricted = !state.isRestricted;
+                if (state.isRestricted) {
+                    this.restrictedTiles.add(tileKey);
+                } else {
+                    this.restrictedTiles.delete(tileKey);
+                }
+            } else if (!state.isRestricted) {
+                // Handle normal mode - only allow selection of non-restricted tiles
+                state.isSelected = !state.isSelected;
+            }
+            this.drawTile(tileInfo.graphics, tileInfo.x, tileInfo.y, 
+                state.isHovered, state.isSelected, state.isRestricted, tileKey, layerIndex);
+        });
+    }
+
+    // ===== CLOUD SYSTEM =====
+    initializeCloudSystem() {
+        // Create a timer event for cloud spawning
+        this.cloudTimer = this.time.addEvent({
+            delay: this.cloudSpawnInterval,
+            callback: this.spawnCloud,
+            callbackScope: this,
+            loop: true
+        });
+        
+        // Spawn the first cloud immediately
+        this.spawnCloud();
+    }
+    
+    spawnCloud() {
+        if (this.clouds.length >= this.maxClouds) return;
+        
+        // Spawn clouds across the complete screen area
+        // Choose randomly between spawning from right edge or bottom edge
+        const spawnFromRightEdge = Math.random() < 0.5;
+        
+        let startX, startY;
+        
+        if (spawnFromRightEdge) {
+            // Spawn from right edge - cover full height of screen
+            startX = this.cameras.main.width + 100; // Start off-screen right
+            startY = Math.random() * this.cameras.main.height; // Random Y across full screen height
+        } else {
+            // Spawn from bottom edge - cover full width of screen
+            startX = Math.random() * this.cameras.main.width; // Random X across full screen width
+            startY = this.cameras.main.height + 100; // Start off-screen bottom
+        }
+        
+        // Calculate end position using the exact isometric grid angle (26.57°)
+        // tan(26.57°) = 0.5, so for every 2 units left, move 1 unit up
+        const horizontalDistance = startX + 250; // Total horizontal distance to travel
+        const verticalDistance = horizontalDistance * 0.5; // Using tan(26.57°) = 0.5
+        
+        const endX = -250; // End off-screen left
+        const endY = startY - verticalDistance; // Move up by the calculated vertical distance
+        
+        // Create cloud sprite
+        const cloud = this.add.image(startX, startY, 'cloud');
+        
+        // Varied sizes while maintaining aspect ratio (uniform scaling)
+        const scale = this.cloudScaleMin + Math.random() * (this.cloudScaleMax - this.cloudScaleMin);
+        cloud.setScale(scale); // This maintains aspect ratio
+        
+        // Varied transparency for depth effect
+        const alpha = this.cloudAlphaMin + Math.random() * (this.cloudAlphaMax - this.cloudAlphaMin);
+        cloud.setAlpha(alpha);
+        
+        // Add cloud to the separate cloud container (always visible)
+        this.cloudContainer.add(cloud);
+        
+        // Add to clouds array
+        this.clouds.push(cloud);
+        
+        // Calculate movement duration based on distance
+        const distance = Phaser.Math.Distance.Between(startX, startY, endX, endY);
+        const duration = distance * 8 + Math.random() * 2000; // Slight speed variation
+        
+        // Animate cloud movement from bottom-right to top-left
+        this.tweens.add({
+            targets: cloud,
+            x: endX,
+            y: endY,
+            duration: duration,
+            ease: 'Linear',
+            onComplete: () => {
+                // Remove cloud when it reaches the end
+                this.removeCloud(cloud);
+            }
+        });
+        
+        console.log(`Spawned cloud at (${Math.round(startX)}, ${Math.round(startY)}), total clouds: ${this.clouds.length}`);
+    }
+    
+    removeCloud(cloud) {
+        // Remove from clouds array
+        const index = this.clouds.indexOf(cloud);
+        if (index > -1) {
+            this.clouds.splice(index, 1);
+        }
+        
+        // Destroy the cloud sprite
+        if (cloud && !cloud.destroyed) {
+            cloud.destroy();
+        }
+        
+        console.log(`Removed cloud, remaining clouds: ${this.clouds.length}`);
+    }
+    
+    cleanupCloudSystem() {
+        // Remove cloud timer
+        if (this.cloudTimer) {
+            this.cloudTimer.destroy();
+            this.cloudTimer = null;
+        }
+        
+        // Remove all clouds
+        this.clouds.forEach(cloud => {
+            if (cloud && !cloud.destroyed) {
+                cloud.destroy();
+            }
+        });
+        this.clouds = [];
+        
+        // Destroy cloud container
+        if (this.cloudContainer && !this.cloudContainer.destroyed) {
+            this.cloudContainer.destroy();
+            this.cloudContainer = null;
+        }
+    }
+
+    // ===== DRAG & DROP SYSTEM =====
+    getPointerWorldPosition(pointer) {
+        // Convert screen coordinates to world coordinates
+        const worldX = (pointer.x - this.gridLayer.x) / this.gridLayer.scaleX;
+        const worldY = (pointer.y - this.gridLayer.y) / this.gridLayer.scaleY;
+        
+        return {
+            x: worldX,
+            y: worldY
+        };
+    }
+
+    getPointerWorldPositionForTileSelection(pointer) {
+        // Convert screen coordinates to world coordinates
+        const worldX = (pointer.x - this.gridLayer.x) / this.gridLayer.scaleX;
+        const worldY = (pointer.y - this.gridLayer.y) / this.gridLayer.scaleY;
+        
+        // Apply calibration offset for better isometric tile selection
+        // Since the user reports that hovering over a sprite selects the tile below,
+        // we need to offset the Y coordinate upward in the isometric space
+        const calibrationOffsetY = -this.tileSize / 4; // Offset upward by quarter tile height
+        
+        return {
+            x: worldX,
+            y: worldY + calibrationOffsetY
+        };
+    }
+
+    handleDragEnd(pointer) {
+        if (this.draggedItem) {
+            const pointerWorld = this.getPointerWorldPositionForTileSelection(pointer);
+            let closestTile = null;
+            let minDistance = Infinity;
+            for (const tile of this.tiles) {
+                const distance = Phaser.Math.Distance.Between(
+                    pointerWorld.x, pointerWorld.y,
+                    tile.x, tile.y
+                );
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    closestTile = tile;
+                }
+            }
+            if (closestTile && minDistance < this.tileSize) {
+                const tileKey = `${closestTile.row},${closestTile.col}`;
+                const config = this.iconConfig[this.draggedItem.textureKey] || { yOffset: this.tileSize / 4, scale: 1, tileSpan: 1 };
+                const tileSpan = config.tileSpan || 1;
+                let multiTiles = [];
+                if (tileSpan > 1) {
+                    // Collect all tile keys in the square area
+                    for (let dr = 0; dr < tileSpan; dr++) {
+                        for (let dc = 0; dc < tileSpan; dc++) {
+                            multiTiles.push(`${closestTile.row+dr},${closestTile.col+dc}`);
+                        }
+                    }
+                    // Check all tiles are available
+                    for (const key of multiTiles) {
+                        if (this.restrictedTiles.has(key) || this.placedItems.has(key)) {
+                            this.draggedItem.destroy();
+                            this.draggedItem = null;
+                            return;
+                        }
+                    }
+                } else {
+                    // Check if tile is restricted
+                    if (this.restrictedTiles.has(tileKey)) {
+                        this.draggedItem.destroy();
+                        this.draggedItem = null;
+                        return;
+                    }
+                }
+                // Remove existing item if any (for single-tile)
+                if (tileSpan === 1 && this.placedItems.has(tileKey)) {
+                    const existingItem = this.placedItems.get(tileKey);
+                    const replacedTextureKey = existingItem.textureKey;
+                    const replacedCount = this.spriteCounters.get(replacedTextureKey);
+                    this.spriteCounters.set(replacedTextureKey, replacedCount + 1);
+                    this.scene.get('UIScene').updateSpriteCounter(replacedTextureKey, replacedCount + 1);
+                    existingItem.destroy();
+                    this.placedItems.delete(tileKey);
+                }
+                // Check if we have sprites available
+                const remainingSprites = this.spriteCounters.get(this.draggedItem.textureKey);
+                if (remainingSprites <= 0) {
+                    this.draggedItem.destroy();
+                    this.draggedItem = null;
+                    if (!this.firstZeroAssetShown) {
+                        this.showFirstZeroAssetMessage();
+                        this.firstZeroAssetShown = true;
+                    }
+                    return;
+                }
+                this.spriteCounters.set(this.draggedItem.textureKey, remainingSprites - 1);
+                this.scene.get('UIScene').updateSpriteCounter(this.draggedItem.textureKey, remainingSprites - 1);
+                this.textures.get(this.draggedItem.textureKey).setFilter(Phaser.Textures.FilterMode.NEAREST);
+                let item;
+                if (tileSpan > 1) {
+                    // Center over the multi-tile area
+                    const topLeft = this.tiles.find(t => `${t.row},${t.col}` === multiTiles[0]);
+                    const bottomRight = this.tiles.find(t => `${t.row},${t.col}` === multiTiles[multiTiles.length-1]);
+                    const centerX = (topLeft.x + bottomRight.x) / 2;
+                    const centerY = (topLeft.y + bottomRight.y) / 2 + config.yOffset;
+                    item = this.add.image(centerX, centerY, this.draggedItem.textureKey);
+                    this.gridLayer.add(item);
+                    item.setOrigin(0.5, 1);
+                    // SCALE: always tileSpan * tileSize
+                    const baseScale = (this.tileSize * tileSpan / item.width);
+                    item.setScale(baseScale * (config.scale || 1) * this.baseScale);
+                    item.textureKey = this.draggedItem.textureKey;
+                    item.multiTileKeys = multiTiles;
+                    for (const key of multiTiles) {
+                        this.placedItems.set(key, item);
+                    }
+                } else {
+                    item = this.add.image(closestTile.x, closestTile.y + config.yOffset, this.draggedItem.textureKey);
+                    this.gridLayer.add(item);
+                    item.setOrigin(0.5, 1);
+                    // SCALE: always tileSpan * tileSize (tileSpan=1 here)
+                    const baseScale = (this.tileSize * tileSpan / item.width);
+                    item.setScale(baseScale * (config.scale || 1) * this.baseScale);
+                    item.textureKey = this.draggedItem.textureKey;
+                    this.placedItems.set(tileKey, item);
+                }
+                // Make the item interactive for selection and dragging
+                item.setInteractive();
+                this.input.setDraggable(item);
+                
+                // Handle selection
+                item.on('pointerdown', () => {
+                    console.log('[DEBUG] Sprite clicked! Current selectedItem:', this.selectedItem);
+                    console.log('[DEBUG] Clicked item:', item);
+                    if (this.selectedItem === item) {
+                        console.log('[DEBUG] Deselecting sprite');
+                        item.setTint(0xffffff);
+                        this.selectedItem = null;
+                        this.destroyRotateButton();
+                    } else {
+                        console.log('[DEBUG] Selecting new sprite');
+                        if (this.selectedItem) {
+                            console.log('[DEBUG] Clearing previous selection');
+                            this.selectedItem.setTint(0xffffff);
+                            this.destroyRotateButton();
+                        }
+                        this.selectedItem = item;
+                        item.setTint(0x666666);
+                        console.log('[DEBUG] About to create rotate button');
+                        this.createRotateButton(item);
+                    }
+                });
+
+                // Handle dragging placed sprites
+                item.on('dragstart', (pointer) => {
+                    // Store original position for potential restoration
+                    item.originalX = item.x;
+                    item.originalY = item.y;
+                    item.setDepth(1000); // Bring to front while dragging
+                    item.setAlpha(0.7); // Make slightly transparent while dragging
+                    
+                    // Remove from current position in placedItems map
+                    if (item.multiTileKeys) {
+                        // Multi-tile item (like castle)
+                        for (const key of item.multiTileKeys) {
+                            this.placedItems.delete(key);
+                        }
+                    } else {
+                        // Single-tile item
+                        for (const [key, placedItem] of this.placedItems.entries()) {
+                            if (placedItem === item) {
+                                this.placedItems.delete(key);
+                                break;
+                            }
+                        }
+                    }
+                });
+
+                item.on('drag', (pointer) => {
+                    const pointerWorld = this.getPointerWorldPosition(pointer);
+                    item.x = pointerWorld.x;
+                    item.y = pointerWorld.y;
+                    
+                    // Update rotate button position if this is the selected item
+                    if (this.selectedItem === item) {
+                        this.updateRotateButtonPosition();
+                    }
+                    
+                    // Check if hovering over delete zone
+                    if (this.checkDeleteZoneHover(pointer)) {
+                        this.activateDeleteZone();
+                        this.hoveredPlacementTiles = []; // Clear tile highlights when over delete zone
+                    } else {
+                        this.deactivateDeleteZone();
+                        // Show tile highlights while dragging placed sprites
+                        this.updateDragHoverTiles(item, pointer);
+                    }
+                });
+
+                item.on('dragend', (pointer) => {
+                    this.handlePlacedSpriteDragEnd(item, pointer);
+                });
+                this.sounds.pop.play();
+                this.draggedItem.destroy();
+                this.draggedItem = null;
+                this.sortByIsometricDepth();
+                // Show second welcome message only once
+                if (this.welcomeChatbox && !this.secondWelcomeMessageShown) {
+                    this.welcomeChatbox.destroy();
+                    this.showSecondWelcomeMessage();
+                    this.secondWelcomeMessageShown = true;
+                }
+                
+                // Update population after placing an item
+                this.updatePopulation();
+                
+                return;
+            }
+            this.draggedItem.destroy();
+            this.draggedItem = null;
+        }
+        this.sortByIsometricDepth();
+    }
+
+    handlePlacedSpriteDragEnd(item, pointer) {
+        // Clear hover tiles when drag ends
+        this.hoveredPlacementTiles = [];
+        this.deactivateDeleteZone();
+        
+        // Check if dropped in delete zone
+        if (this.checkDeleteZoneHover(pointer)) {
+            this.deleteSprite(item);
+                return;
+            }
+        
+        const pointerWorld = this.getPointerWorldPositionForTileSelection(pointer);
+        let closestTile = null;
+        let minDistance = Infinity;
+
+        // Find the closest tile
+        for (const tile of this.tiles) {
+            const distance = Phaser.Math.Distance.Between(
+                pointerWorld.x, pointerWorld.y,
+                tile.x, tile.y
+            );
+            if (distance < minDistance) {
+                minDistance = distance;
+                closestTile = tile;
+            }
+        }
+
+        // Reset sprite appearance
+        item.setAlpha(1);
+        item.setDepth(100);
+
+        if (closestTile && minDistance < this.tileSize) {
+            const config = this.iconConfig[item.textureKey] || { yOffset: this.tileSize / 4, scale: 1, tileSpan: 1 };
+            const tileSpan = config.tileSpan || 1;
+            const newTileKey = `${closestTile.row},${closestTile.col}`;
+
+            // Check if the new location is valid
+            let canPlace = true;
+            let targetTiles = [];
+
+            if (tileSpan > 1) {
+                // Multi-tile sprite (like castle)
+                for (let dr = 0; dr < tileSpan; dr++) {
+                    for (let dc = 0; dc < tileSpan; dc++) {
+                        const checkKey = `${closestTile.row+dr},${closestTile.col+dc}`;
+                        targetTiles.push(checkKey);
+                        
+                        // Check if tile is restricted or occupied
+                        if (this.restrictedTiles.has(checkKey) || this.placedItems.has(checkKey)) {
+                            canPlace = false;
+                            break;
+                        }
+                    }
+                    if (!canPlace) break;
+                }
+            } else {
+                // Single-tile sprite
+                targetTiles = [newTileKey];
+                if (this.restrictedTiles.has(newTileKey) || this.placedItems.has(newTileKey)) {
+                    canPlace = false;
+                }
+            }
+
+            if (canPlace) {
+                // Place sprite at new location
+                if (tileSpan > 1) {
+                    // Multi-tile sprite positioning
+                    const topLeft = this.tiles.find(t => `${t.row},${t.col}` === targetTiles[0]);
+                    const bottomRight = this.tiles.find(t => `${t.row},${t.col}` === targetTiles[targetTiles.length-1]);
+                    const centerX = (topLeft.x + bottomRight.x) / 2;
+                    const centerY = (topLeft.y + bottomRight.y) / 2 + config.yOffset;
+                    
+                    item.x = centerX;
+                    item.y = centerY;
+                    item.multiTileKeys = targetTiles;
+                    
+                    // Update placedItems map for all tiles
+                    for (const key of targetTiles) {
+                        this.placedItems.set(key, item);
+                    }
+                } else {
+                    // Single-tile sprite positioning
+                    item.x = closestTile.x;
+                    item.y = closestTile.y + config.yOffset;
+                    
+                    // Update placedItems map
+                    this.placedItems.set(newTileKey, item);
+                }
+
+                // Play placement sound
+                this.sounds.pop.play();
+                
+                // Update rotate button position if this item is selected
+                if (this.selectedItem === item) {
+                    this.updateRotateButtonPosition();
+                }
+                
+                // Update population after moving an item
+                this.updatePopulation();
+            } else {
+                // Invalid location - restore to original position
+                item.x = item.originalX;
+                item.y = item.originalY;
+                
+                // Re-add to placedItems map at original location
+                if (item.multiTileKeys) {
+                    // Multi-tile item
+                    for (const key of item.multiTileKeys) {
+                        this.placedItems.set(key, item);
+                    }
+                } else {
+                    // Single-tile item - find original position
+                    for (const tile of this.tiles) {
+                        const config = this.iconConfig[item.textureKey] || { yOffset: this.tileSize / 4 };
+                        if (Math.abs(tile.x - item.originalX) < 5 && 
+                            Math.abs(tile.y + config.yOffset - item.originalY) < 5) {
+                            const tileKey = `${tile.row},${tile.col}`;
+                            this.placedItems.set(tileKey, item);
+                            break;
+        }
+                    }
+                }
+                
+                // Show feedback for invalid placement
+                this.showMessage('Cannot place here!', '#ff0000');
+            }
+        } else {
+            // No valid tile found - restore to original position
+            item.x = item.originalX;
+            item.y = item.originalY;
+            
+            // Re-add to placedItems map at original location
+            if (item.multiTileKeys) {
+                // Multi-tile item
+                for (const key of item.multiTileKeys) {
+                    this.placedItems.set(key, item);
+                }
+            } else {
+                // Single-tile item - find original position
+                for (const tile of this.tiles) {
+                    const config = this.iconConfig[item.textureKey] || { yOffset: this.tileSize / 4 };
+                    if (Math.abs(tile.x - item.originalX) < 5 && 
+                        Math.abs(tile.y + config.yOffset - item.originalY) < 5) {
+                        const tileKey = `${tile.row},${tile.col}`;
+                        this.placedItems.set(tileKey, item);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Clean up temporary properties
+        delete item.originalX;
+        delete item.originalY;
+
+        // Update grid to clear any remaining hover effects
+        this.updateGridAndItems();
+
+        // Re-sort depth
+        this.sortByIsometricDepth();
+    }
+
+    updateDragHoverTiles(draggedSprite, pointer) {
+        const pointerWorld = this.getPointerWorldPositionForTileSelection(pointer);
+        let closestTile = null;
+        let minDistance = Infinity;
+
+        // Find the closest tile
+        for (const tile of this.tiles) {
+            const distance = Phaser.Math.Distance.Between(
+                pointerWorld.x, pointerWorld.y,
+                tile.x, tile.y
+            );
+            if (distance < minDistance) {
+                minDistance = distance;
+                closestTile = tile;
+            }
+        }
+
+        if (closestTile && minDistance < this.tileSize) {
+            const config = this.iconConfig[draggedSprite.textureKey] || { tileSpan: 1 };
+            const tileSpan = config.tileSpan || 1;
+            let hoverTiles = [];
+
+            // Calculate which tiles would be affected
+            for (let dr = 0; dr < tileSpan; dr++) {
+                for (let dc = 0; dc < tileSpan; dc++) {
+                    hoverTiles.push(`${closestTile.row+dr},${closestTile.col+dc}`);
+                }
+            }
+
+            this.hoveredPlacementTiles = hoverTiles;
+        } else {
+            this.hoveredPlacementTiles = [];
+        }
+
+        // Update grid to show highlights
+        this.updateGridAndItems();
+    }
+
+    checkDeleteZoneHover(pointer) {
+        if (!this.deleteZoneBounds) return false;
+        
+        return pointer.x >= this.deleteZoneBounds.x && 
+               pointer.x <= this.deleteZoneBounds.x + this.deleteZoneBounds.width &&
+               pointer.y >= this.deleteZoneBounds.y && 
+               pointer.y <= this.deleteZoneBounds.y + this.deleteZoneBounds.height;
+    }
+
+    activateDeleteZone() {
+        if (!this.deleteZone) return;
+        
+        // Enhance visual feedback when hovering over delete zone
+        this.deleteZoneBg.clear();
+        this.deleteZoneBg.fillStyle(0xff4444, 0.9);
+        this.deleteZoneBg.lineStyle(4, 0xffffff, 1);
+        this.deleteZoneBg.fillCircle(0, 0, 60);
+        this.deleteZoneBg.strokeCircle(0, 0, 60);
+        
+        // Scale up the icon
+        this.tweens.add({
+            targets: [this.deleteZoneIcon, this.deleteZoneText],
+            scaleX: 1.3,
+            scaleY: 1.3,
+            duration: 200,
+            ease: 'Power2'
+        });
+    }
+
+    deactivateDeleteZone() {
+        if (!this.deleteZone) return;
+        
+        // Return to normal appearance
+        this.deleteZoneBg.clear();
+        this.deleteZoneBg.fillStyle(0x444444, 0.6);
+        this.deleteZoneBg.lineStyle(3, 0xff4444, 0.8);
+        this.deleteZoneBg.fillCircle(0, 0, 60);
+        this.deleteZoneBg.strokeCircle(0, 0, 60);
+        
+        // Scale back to normal
+        this.tweens.add({
+            targets: [this.deleteZoneIcon, this.deleteZoneText],
+            scaleX: 1,
+            scaleY: 1,
+            duration: 200,
+            ease: 'Power2'
+        });
+    }
+
+    deleteSprite(item) {
+        // Remove from placedItems map
+        if (item.multiTileKeys) {
+            // Multi-tile item (like castle)
+            for (const key of item.multiTileKeys) {
+                this.placedItems.delete(key);
+            }
+        } else {
+            // Single-tile item
+            for (const [key, placedItem] of this.placedItems.entries()) {
+                if (placedItem === item) {
+                    this.placedItems.delete(key);
+                    break;
+                }
+            }
+        }
+
+        // Return sprite to inventory
+        const textureKey = item.textureKey;
+        const currentCount = this.spriteCounters.get(textureKey);
+        this.spriteCounters.set(textureKey, currentCount + 1);
+        this.scene.get('UIScene').updateSpriteCounter(textureKey, currentCount + 1);
+
+        // Clear selection if this was the selected item
+        if (this.selectedItem === item) {
+            this.selectedItem = null;
+            this.destroyRotateButton();
+        }
+
+        // Create deletion effect
+        this.createDeletionEffect(item.x, item.y);
+
+        // Destroy the sprite
+        item.destroy();
+
+        // Show feedback message
+        this.showMessage('Item deleted!', '#ff4444');
+        
+        // Update population after deleting an item
+        this.updatePopulation();
+    }
+
+    createDeletionEffect(x, y) {
+        // Create puff of smoke effect
+        const particles = this.add.particles(x, y, 'coin', {
+            scale: { start: 0.3, end: 0 },
+            alpha: { start: 0.8, end: 0 },
+            speed: { min: 50, max: 150 },
+            lifespan: 500,
+            quantity: 8,
+            tint: 0x666666
+        });
+
+        // Remove particles after animation
+        this.time.delayedCall(600, () => {
+            particles.destroy();
+        });
+
+        // Play sound effect
+        this.sounds.pop.play();
+    }
+
+    drawTile(graphics, x, y, isHovered = false, isSelected = false, isRestricted = false, tileKey = null, layerIndex = 0) {
+        graphics.clear();
+        
+        if (this.developerMode) {
+            // Developer mode: always show grid, restricted tiles always red
+            let strokeColor;
+            if (isRestricted) {
+                strokeColor = 0xff0000; // Red for restricted tiles
+            } else if (isSelected) {
+                strokeColor = 0xff00ff; // Magenta for selected tiles
+            } else if (isHovered) {
+                strokeColor = 0x00ffff; // Cyan for hovered tiles
+            } else {
+                strokeColor = this.gridColors[layerIndex]; // Use grid-specific color
+            }
+            const lineWidth = 2 / this.baseScale;
+            graphics.lineStyle(lineWidth, strokeColor);
+            graphics.beginPath();
+            graphics.moveTo(x, y - this.tileSize / 4); // Top
+            graphics.lineTo(x + this.tileSize / 2, y); // Right
+            graphics.lineTo(x, y + this.tileSize / 4); // Bottom
+            graphics.lineTo(x - this.tileSize / 2, y); // Left
+            graphics.closePath();
+            graphics.strokePath();
+        } else {
+            if (isRestricted) {
+                return;
+            }
+            // Darken if this tile is in hoveredPlacementTiles
+            if (tileKey && this.hoveredPlacementTiles && this.hoveredPlacementTiles.includes(tileKey)) {
+                console.log('[DEBUG] drawTile: darken tile', tileKey, 'hoveredPlacementTiles:', this.hoveredPlacementTiles);
+                graphics.fillStyle(0x000000, 0.35);
+                graphics.beginPath();
+                graphics.moveTo(x, y - this.tileSize / 4); // Top
+                graphics.lineTo(x + this.tileSize / 2, y); // Right
+                graphics.lineTo(x, y + this.tileSize / 4); // Bottom
+                graphics.lineTo(x - this.tileSize / 2, y); // Left
+                graphics.closePath();
+                graphics.fillPath();
+            }
+            let strokeColor = null;
+            if (!this.showGrid) return;
+            if (isSelected) {
+                strokeColor = 0xff00ff;
+            } else if (isHovered) {
+                strokeColor = 0x00ffff;
+            } else {
+                strokeColor = this.gridColors[layerIndex]; // Use grid-specific color
+            }
+            if (strokeColor !== null) {
+                const lineWidth = 2 / this.baseScale;
+                graphics.lineStyle(lineWidth, strokeColor);
+                graphics.beginPath();
+                graphics.moveTo(x, y - this.tileSize / 4); // Top
+                graphics.lineTo(x + this.tileSize / 2, y); // Right
+                graphics.lineTo(x, y + this.tileSize / 4); // Bottom
+                graphics.lineTo(x - this.tileSize / 2, y); // Left
+                graphics.closePath();
+                graphics.strokePath();
+            }
+        }
+    }
+
+    updateGridAndItems() {
+        console.log('[DEBUG] updateGridAndItems called, hoveredPlacementTiles:', this.hoveredPlacementTiles, 'draggedItem:', this.draggedItem ? this.draggedItem.textureKey : null);
+        // Update grid tiles (only redraw visible ones for performance)
+        this.tiles.forEach(tile => {
+            if (tile.graphics) {
+                const tileKey = `${tile.row},${tile.col}`;
+                const tileW = this.tileSize;
+                
+                // Check if tile is visible on screen
+                const isVisible = !(
+                    tile.x + tileW / 2 < 0 || tile.x - tileW / 2 > this.cameras.main.width ||
+                    tile.y + tileW / 4 < 0 || tile.y - tileW / 4 > this.cameras.main.height
+                );
+                
+                if (isVisible) {
+                    this.drawTile(tile.graphics, tile.x, tile.y, false, false, this.tileStates.get(tileKey).isRestricted, tileKey, this.currentGridLayer);
+                }
+            }
+        });
+        // Update placed items
+        this.placedItems.forEach(item => {
+            if (item) {
+                const config = this.iconConfig[item.textureKey] || { yOffset: this.tileSize / 4, scale: 1, tileSpan: 1 };
+                const tileSpan = config.tileSpan || 1;
+                item.setOrigin(0.5, 1);
+                // SCALE: always tileSpan * tileSize
+                const baseScale = (this.tileSize * tileSpan / item.width);
+                const newScale = baseScale * (config.scale || 1) * this.baseScale;
+                
+                // Preserve rotation state (horizontal flip)
+                const isFlipped = item.scaleX < 0;
+                item.setScale(newScale);
+                if (isFlipped) {
+                    item.scaleX *= -1; // Maintain the flip
+                }
+            }
+        });
+        this.sortByIsometricDepth();
+    }
+
+    switchGridLayer() {
+        if (!this.developerMode) return;
+        
+        // Hide current grid layer
+        this.gridLayers[this.currentGridLayer].setVisible(false);
+        
+        // Switch to next grid layer (cycle through 0, 1, 2)
+        this.currentGridLayer = (this.currentGridLayer + 1) % 3;
+        
+        // Show new grid layer
+        this.gridLayers[this.currentGridLayer].setVisible(true);
+        
+        // Update references for compatibility
+        this.gridLayer = this.gridLayers[this.currentGridLayer];
+        this.tiles = this.gridTiles[this.currentGridLayer];
+        this.tileStates = this.gridTileStates[this.currentGridLayer];
+        
+        // Update zoom scaling for the new layer
+        this.gridLayer.setScale(this.zoomLevel);
+        
+        // Ensure background stays aligned with layer 0 when switching layers
+        if (this.backgroundContainer) {
+            this.backgroundContainer.x = this.gridLayers[0].x;
+            this.backgroundContainer.y = this.gridLayers[0].y;
+        }
+        
+        // Update the grid layer indicator
+        this.updateGridLayerIndicator();
+        
+        // Show message indicating which layer is active
+        const layerNames = ['Ground Layer', 'Mid Layer', 'Top Layer'];
+        const layerColors = ['Green', 'Blue', 'Yellow'];
+        this.showMessage(`Switched to: ${layerNames[this.currentGridLayer]} (${layerColors[this.currentGridLayer]})`, this.gridColors[this.currentGridLayer]);
+// ===== LOADING SCENE =====
+class LoadingScene extends Phaser.Scene {
+    constructor() {
+        super({ key: 'LoadingScene' });
+        this.loadingProgress = 0;
+    }
+
+    preload() {
+        // Load the loading screen background first
+        this.load.image('loadingBg', 'assets/loading-screen.png');
+        
+        // Load all game assets
+        this.load.image('tree', 'assets/tree.png');
+        this.load.image('ground', 'assets/ground.png');
+        this.load.image('grass', 'assets/grass.png');
+        this.load.image('grass1', 'assets/grass1.png');
+        this.load.image('flower', 'assets/fiower.png');
+        this.load.image('flower2', 'assets/flower2.png');
+        this.load.image('fence', 'assets/fence.png');
+        this.load.image('fence2', 'assets/fence2.png');
+        this.load.image('fencecorner', 'assets/fencecorner.png');
+        this.load.image('mystical1', 'assets/mystical1.png');
+        this.load.image('mystical2', 'assets/mystical2.png');
+        this.load.image('castle', 'assets/castle.png');
+        this.load.image('hut', 'assets/hut.png');
+        this.load.image('hut-u1', 'assets/hut-u1.png');
+        this.load.image('wall', 'assets/wall.png');
+        this.load.image('temple', 'assets/temple.png');
+        this.load.image('shrine', 'assets/shrine.png');
+        this.load.image('temple-u1', 'assets/temple-u1.png');
+        this.load.image('tower1', 'assets/tower1.png');
+        this.load.image('coin', 'assets/coin.png');
+        this.load.image('shop', 'assets/shop.png');
+        this.load.image('pixie', 'assets/pixie.png');
+        this.load.image('cloud', 'assets/cloud.png');
+        
+        // Load audio files
+        this.load.audio('bgm', 'assets/audio/bgm.mp3');
+        this.load.audio('button', 'assets/audio/button.mp3');
+        this.load.audio('correct', 'assets/audio/correct.mp3');
+        this.load.audio('pop', 'assets/audio/pop.mp3');
+        this.load.audio('shop', 'assets/audio/shop.mp3');
+
+        // Store progress for later use
+        this.loadingProgress = 0;
+        
+        // Set up loading progress events
+        this.load.on('progress', (percentage) => {
+            this.loadingProgress = percentage;
+            // Only update if loading bar exists
+            if (this.loadingBar) {
+                this.updateLoadingBar(percentage);
+            }
+        });
+
+        this.load.on('complete', () => {
+            // Show start game button when loading is complete
+            this.time.delayedCall(500, () => {
+                this.showStartButton();
+            });
+        });
+    }
+
+    create() {
+        // Create background
+        const bg = this.add.image(0, 0, 'loadingBg');
+        bg.setOrigin(0, 0);
+        bg.setDisplaySize(this.cameras.main.width, this.cameras.main.height);
+
+        // Create loading bar graphics now that camera is available
+        this.createLoadingBar();
+        
+        // Update with current progress if any loading has happened
+        if (this.loadingProgress > 0) {
+            this.updateLoadingBar(this.loadingProgress);
+        }
+
+        // Create loading text with beautiful styling
+        this.loadingText = this.add.text(this.cameras.main.width / 2, this.cameras.main.height * 0.7, 
+            'Loading Your Magical Garden...', {
+            fontSize: '32px',
+            color: '#FFFFFF',
+            fontFamily: 'Comic Sans MS, cursive, sans-serif',
+            fontStyle: 'bold',
+            stroke: '#2C3E50',
+            strokeThickness: 4,
+            shadow: { offsetX: 3, offsetY: 3, color: '#000000', blur: 5, fill: true }
+        }).setOrigin(0.5);
+
+        // Add loading animation
+        this.tweens.add({
+            targets: this.loadingText,
+            alpha: 0.5,
+            duration: 1000,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut'
+        });
+
+        // Add magical sparkles
+        this.createSparkles();
+    }
+
+    createLoadingBar() {
+        const barWidth = 400;
+        const barHeight = 20;
+        const barX = this.cameras.main.width / 2 - barWidth / 2;
+        const barY = this.cameras.main.height * 0.8;
+
+        // Loading bar background
+        this.loadingBarBg = this.add.graphics();
+        this.loadingBarBg.fillStyle(0x000000, 0.7);
+        this.loadingBarBg.fillRoundedRect(barX - 5, barY - 5, barWidth + 10, barHeight + 10, 10);
+        this.loadingBarBg.lineStyle(3, 0xFFFFFF, 0.8);
+        this.loadingBarBg.strokeRoundedRect(barX - 5, barY - 5, barWidth + 10, barHeight + 10, 10);
+
+        // Loading bar fill
+        this.loadingBar = this.add.graphics();
+
+        // Loading percentage text
+        this.percentageText = this.add.text(this.cameras.main.width / 2, barY + 40, '0%', {
+            fontSize: '18px',
+            color: '#FFFFFF',
+            fontFamily: 'Comic Sans MS, cursive, sans-serif',
+            fontStyle: 'bold',
+            stroke: '#2C3E50',
+            strokeThickness: 2
+        }).setOrigin(0.5);
+    }
+
+    updateLoadingBar(percentage) {
+        // Safety check to ensure loading bar exists
+        if (!this.loadingBar || !this.percentageText) {
+            return;
+        }
+        
+        const barWidth = 400;
+        const barHeight = 20;
+        const barX = this.cameras.main.width / 2 - barWidth / 2;
+        const barY = this.cameras.main.height * 0.8;
+
+        this.loadingBar.clear();
+        
+        // Gradient fill based on progress
+        const fillWidth = barWidth * percentage;
+        if (fillWidth > 0) {
+            // Create a colorful gradient that changes as loading progresses
+            let startColor, endColor;
+            if (percentage < 0.33) {
+                startColor = 0xFF6B6B; // Red to orange
+                endColor = 0xFFA500;
+            } else if (percentage < 0.66) {
+                startColor = 0xFFA500; // Orange to yellow
+                endColor = 0xFFD700;
+            } else {
+                startColor = 0xFFD700; // Yellow to green
+                endColor = 0x32CD32;
+            }
+            
+            this.loadingBar.fillGradientStyle(startColor, endColor, startColor, endColor, 1);
+            this.loadingBar.fillRoundedRect(barX, barY, fillWidth, barHeight, 8);
+        }
+
+        // Update percentage text
+        this.percentageText.setText(Math.round(percentage * 100) + '%');
+        
+        // Update loading text when complete
+        if (percentage >= 1) {
+            this.loadingText.setText('Loading Complete!');
+            this.loadingText.setStyle({ color: '#32CD32' }); // Green color for completion
+        }
+    }
+
+    showStartButton() {
+        // Create start game button
+        const buttonY = this.cameras.main.height * 0.9;
+        
+        // Button background with beautiful styling
+        const startButtonBg = this.add.graphics();
+        const buttonWidth = 200;
+        const buttonHeight = 60;
+        const buttonX = this.cameras.main.width / 2 - buttonWidth / 2;
+        
+        // Button shadow
+        startButtonBg.fillStyle(0x000000, 0.3);
+        startButtonBg.fillRoundedRect(buttonX + 4, buttonY + 4, buttonWidth, buttonHeight, 15);
+        
+        // Main button gradient (vibrant blue to green)
+        startButtonBg.fillGradientStyle(0x4CAF50, 0x45A049, 0x66BB6A, 0x4CAF50, 1);
+        startButtonBg.fillRoundedRect(buttonX, buttonY, buttonWidth, buttonHeight, 15);
+        
+        // Button highlight
+        startButtonBg.fillGradientStyle(0xFFFFFF, 0xFFFFFF, 0xE8E8E8, 0xE8E8E8, 0.3);
+        startButtonBg.fillRoundedRect(buttonX + 4, buttonY + 4, buttonWidth - 8, buttonHeight / 2, 12);
+        
+        // Button border
+        startButtonBg.lineStyle(3, 0xFFFFFF, 0.8);
+        startButtonBg.strokeRoundedRect(buttonX, buttonY, buttonWidth, buttonHeight, 15);
+        
+        // Button text
+        const startButtonText = this.add.text(
+            this.cameras.main.width / 2,
+            buttonY + buttonHeight / 2,
+            'START GAME',
+            {
+                fontSize: '24px',
+                color: '#FFFFFF',
+                fontFamily: 'Comic Sans MS, cursive, sans-serif',
+                fontStyle: 'bold',
+                stroke: '#2C5530',
+                strokeThickness: 3,
+                shadow: { offsetX: 2, offsetY: 2, color: '#000000', blur: 3, fill: true }
+            }
+        ).setOrigin(0.5);
+        
+        // Make button interactive
+        const buttonArea = this.add.rectangle(
+            this.cameras.main.width / 2,
+            buttonY + buttonHeight / 2,
+            buttonWidth,
+            buttonHeight
+        );
+        buttonArea.setInteractive({ useHandCursor: true });
+        
+        // Button click handler
+        buttonArea.on('pointerdown', () => {
+            // Button press animation
+            this.tweens.add({
+                targets: [startButtonBg, startButtonText],
+                scaleX: 0.95,
+                scaleY: 0.95,
+                duration: 100,
+                yoyo: true,
+                onComplete: () => {
+                    // Start the main game
+                    this.scene.start('IsometricGridScene');
+                }
+            });
+        });
+        
+        // Button hover effects
+        buttonArea.on('pointerover', () => {
+            this.tweens.add({
+                targets: [startButtonBg, startButtonText],
+                scaleX: 1.05,
+                scaleY: 1.05,
+                duration: 200,
+                ease: 'Power2'
+            });
+            
+            // Change button color on hover
+            startButtonBg.clear();
+            // Button shadow
+            startButtonBg.fillStyle(0x000000, 0.4);
+            startButtonBg.fillRoundedRect(buttonX + 4, buttonY + 4, buttonWidth, buttonHeight, 15);
+            
+            // Brighter gradient on hover
+            startButtonBg.fillGradientStyle(0x66BB6A, 0x4CAF50, 0x81C784, 0x66BB6A, 1);
+            startButtonBg.fillRoundedRect(buttonX, buttonY, buttonWidth, buttonHeight, 15);
+            
+            // Button highlight
+            startButtonBg.fillGradientStyle(0xFFFFFF, 0xFFFFFF, 0xE8E8E8, 0xE8E8E8, 0.4);
+            startButtonBg.fillRoundedRect(buttonX + 4, buttonY + 4, buttonWidth - 8, buttonHeight / 2, 12);
+            
+            // Button border
+            startButtonBg.lineStyle(4, 0xFFFFFF, 1);
+            startButtonBg.strokeRoundedRect(buttonX, buttonY, buttonWidth, buttonHeight, 15);
+        });
+        
+        buttonArea.on('pointerout', () => {
+            this.tweens.add({
+                targets: [startButtonBg, startButtonText],
+                scaleX: 1,
+                scaleY: 1,
+                duration: 200,
+                ease: 'Power2'
+            });
+            
+            // Return to normal color
+            startButtonBg.clear();
+            // Button shadow
+            startButtonBg.fillStyle(0x000000, 0.3);
+            startButtonBg.fillRoundedRect(buttonX + 4, buttonY + 4, buttonWidth, buttonHeight, 15);
+            
+            // Normal gradient
+            startButtonBg.fillGradientStyle(0x4CAF50, 0x45A049, 0x66BB6A, 0x4CAF50, 1);
+            startButtonBg.fillRoundedRect(buttonX, buttonY, buttonWidth, buttonHeight, 15);
+            
+            // Button highlight
+            startButtonBg.fillGradientStyle(0xFFFFFF, 0xFFFFFF, 0xE8E8E8, 0xE8E8E8, 0.3);
+            startButtonBg.fillRoundedRect(buttonX + 4, buttonY + 4, buttonWidth - 8, buttonHeight / 2, 12);
+            
+            // Button border
+            startButtonBg.lineStyle(3, 0xFFFFFF, 0.8);
+            startButtonBg.strokeRoundedRect(buttonX, buttonY, buttonWidth, buttonHeight, 15);
+        });
+        
+        // Button entrance animation
+        startButtonBg.setScale(0);
+        startButtonText.setScale(0);
+        
+        this.tweens.add({
+            targets: [startButtonBg, startButtonText],
+            scaleX: 1,
+            scaleY: 1,
+            duration: 600,
+            ease: 'Back.easeOut'
+        });
+        
+        // Add pulsing animation to make it more noticeable
+        this.tweens.add({
+            targets: [startButtonBg, startButtonText],
+            alpha: 0.8,
+            duration: 1500,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut'
+        });
+    }
+
+    createSparkles() {
+        // Create floating sparkles around the screen
+        const sparkleCount = 15;
+        for (let i = 0; i < sparkleCount; i++) {
+            const x = Phaser.Math.Between(50, this.cameras.main.width - 50);
+            const y = Phaser.Math.Between(50, this.cameras.main.height - 100);
+            
+            const sparkle = this.add.text(x, y, '✨', {
+                fontSize: Phaser.Math.Between(16, 28) + 'px'
+            }).setOrigin(0.5);
+
+            // Random floating animation
+            this.tweens.add({
+                targets: sparkle,
+                y: y - Phaser.Math.Between(20, 40),
+                alpha: 0.3,
+                scaleX: 0.8,
+                scaleY: 0.8,
+                duration: Phaser.Math.Between(2000, 4000),
+                ease: 'Sine.easeInOut',
+                yoyo: true,
+                repeat: -1,
+                delay: Phaser.Math.Between(0, 2000)
+            });
+
+            // Rotation animation
+            this.tweens.add({
+                targets: sparkle,
+                rotation: Math.PI * 2,
+                duration: Phaser.Math.Between(3000, 5000),
+                ease: 'Linear',
+                repeat: -1
+            });
+        }
+    }
+}
+
+// ===== ASSET CONFIGURATION =====
+// This is the main configuration for all sprites in the game
+// You can easily modify population, prices, initial counts, and display properties here
+
+class IsometricGridScene extends Phaser.Scene {
+    constructor() {
+        super({ key: 'IsometricGridScene' });
+        
+        // ===== CLASS PROPERTIES =====
+        // Grid and tile properties
+        this.tileSize = 64; // Size of the diamond tile
+        this.gridSize = 10; // 10x10 grid
+        this.tiles = [];
+        this.tileStates = new Map(); // Map to store tile states
+        this.hoveredPlacementTiles = [];
+        this.showGrid = false; // Grid is hidden by default (toggle available in dev mode)
+        
+        // Drag and drop properties
+        this.draggedItem = null;
+        this.placedItems = new Map(); // Map to store placed items with their positions
+        this.selectedItem = null; // Track the currently selected item
+        this.rotateButton = null; // Track the rotate button
+        
+        // View and zoom properties
+        this.zoomLevel = 1; // Track current zoom level
+        this.minZoom = 1; // Minimum zoom level (100% of original size)
+        this.maxZoom = 2; // Maximum zoom level (200% of original size)
+        this.baseScale = 1; // Base scale for all elements
+        
+        // Developer mode properties
+        this.developerMode = false; // Developer mode state
+        this.restrictionMode = false; // Tile restriction mode
+        this.restrictedTiles = new Set(); // Set to store restricted tile coordinates
+        this.devModeKeySequence = ''; // Store key sequence for developer mode
+        this.devModeTimeout = null; // Timeout for key sequence reset
+        
+        // Game state properties
+        this.coins = 0; // Track number of coins
+        this.firstZeroAssetShown = false; // Track if first zero asset message has been shown
+        this.welcomeMessageShown = false; // Track if welcome message has been shown
+        this.secondWelcomeMessageShown = false; // Track if second welcome message has been shown
+        this.quizActive = false; // Add flag to track if quiz is active
+        
+        // Population tracking
+        this.population = 0; // Current population count
+        this.populationBoosts = {
+            hut: 5,           // Each hut gives +5 population
+            shrine: 20,       // Each shrine gives +20 population (to be added)
+            temple: 40,       // Each mini time temple gives +40 population
+            legendary_temple: 100  // Each legendary time temple gives +100 population (to be added)
+        };
+        
+        // Level system
+        this.currentLevel = 0; // Track current level (0 = starting, 1 = after first 150 population, 2 = after 300 population)
+        this.level1Unlocked = false; // Track if level 1 has been unlocked (150 population)
+        this.level2Unlocked = false; // Track if level 2 upgrades have been unlocked (300 population)
+        this.maxPopulationReached = 0; // Track the highest population reached
+        
+        // Multi-grid system properties
+        this.currentGridLayer = 0; // Track which grid layer is active (0, 1, or 2)
+        this.gridLayers = []; // Array to store all three grid layers
+        this.gridTiles = []; // Array to store tiles for each grid layer
+        this.gridTileStates = []; // Array to store tile states for each grid layer
+        this.gridColors = [0x7cba34, 0x3498db, 0xffff00]; // Green, Blue, Yellow
+        this.gridOffsets = [0, -40, -80]; // Vertical offsets for each grid layer
+        
+        // Cloud system properties (always visible, independent of grid layers)
+        this.clouds = []; // Array to hold active clouds
+        this.cloudSpawnTimer = 10; // Timer for spawning new clouds
+        this.cloudSpawnInterval = 1000; // Spawn a new cloud every 1.5 seconds (faster for better coverage)
+        this.maxClouds = 15; // Maximum number of clouds on screen (increased for grid coverage)
+        this.cloudContainer = null; // Container for all clouds
+        
+        // Cloud appearance configuration
+        this.cloudScaleMin = 1.0; // Minimum cloud scale
+        this.cloudScaleMax = 5.0; // Maximum cloud scale
+        this.cloudAlphaMin = 0.5; // Minimum cloud transparency (60%)
+        this.cloudAlphaMax = 1.0; // Maximum cloud transparency (100%)
+        
+        // Audio instances
+        this.sounds = {
+            bgm: null,
+            button: null,
+            correct: null,
+            pop: null,
+            shop: null
+        };
+        this.isMuted = false; // Track mute state
+        
+        // ===== ASSET CONFIGURATION - EDIT THESE VALUES EASILY =====
+        // This is the main configuration for all sprites in the game
+        // You can easily modify population, prices, initial counts, and display properties here
+        this.assetConfig = {
+            hut: {
+                // Display properties
+                yOffset: this.tileSize / 4 + 6,
+                scale: 1.0,
+                tileSpan: 1,
+                // Game mechanics
+                population: 10,       // 🏠 Population boost (EDIT THIS)
+                price: 50,           // 💰 Shop price (EDIT THIS)
+                initialCount: 20      // 📦 Starting inventory (EDIT THIS)
+            },
+            'hut-u1': {
+                // Display properties
+                yOffset: this.tileSize / 4 + 1,
+                scale: 1.0,
+                tileSpan: 1,
+                // Game mechanics
+                population: 15,       // 🏠 Population boost (EDIT THIS)
+                price: 75,           // 💰 Shop price (EDIT THIS)
+                initialCount: 10      // 📦 Starting inventory (LOCKED - unlocked at level 1)
+            },
+            shrine: {
+                yOffset: this.tileSize / 4 + 28,
+                scale: 1.2,
+                tileSpan: 2,
+                population: 20,       // 🏠 Population boost (EDIT THIS)
+                price: 150,          // 💰 Shop price (EDIT THIS)
+                initialCount: 10      // 📦 Starting inventory (EDIT THIS)
+            },
+            temple: {
+                yOffset: this.tileSize / 4 + 28,
+                scale: 1.4,
+                tileSpan: 2,
+                population: 40,       // 🏠 Population boost (EDIT THIS)
+                price: 300,          // 💰 Shop price (EDIT THIS)
+                initialCount: 10      // 📦 Starting inventory (EDIT THIS)
+            },
+            'temple-u1': {
+                yOffset: this.tileSize / 4 + 35,
+                scale: 1.6,
+                tileSpan: 3,
+                population: 100,      // 🏠 Population boost (EDIT THIS)
+                price: 500,          // 💰 Shop price (EDIT THIS)
+                initialCount: 10      // 📦 Starting inventory (LOCKED - unlocked at level 1)
+            }
+        };
+        
+        // Create backward-compatible references (for existing code)
+        this.iconConfig = {};
+        this.spriteInitialCounts = {};
+        this.spritePrices = {};
+        
+        // Populate backward-compatible objects from the new unified config
+        Object.keys(this.assetConfig).forEach(key => {
+            const config = this.assetConfig[key];
+            this.iconConfig[key] = {
+                yOffset: config.yOffset,
+                scale: config.scale,
+                tileSpan: config.tileSpan
+            };
+            this.spriteInitialCounts[key] = config.initialCount;
+            this.spritePrices[key] = config.price;
+        });
+        
+        this.toolbarExpanded = false; // Start closed
+        
+        // Initialize sprite counters for each icon type
+        this.spriteCounters = new Map();
+        const iconKeys = ['hut', 'hut-u1', 'shrine', 'temple', 'temple-u1'];
         iconKeys.forEach(key => {
             this.spriteCounters.set(key, this.spriteInitialCounts[key]); // Use individual initial counts
         });
@@ -2188,8 +3982,8 @@ class IsometricGridScene extends Phaser.Scene {
         const buttonSpacing = 15;
         const buttonWidth = dialogWidth - 100;
         let attempts = 0;
-        const maxAttempts = 3; // Allow more attempts
-        let correctAnswered = false; // Flag to track if the correct answer has been selected
+        const maxAttempts = 2;
+        let answered = false; // Flag to track if an answer has been selected
 
         options.forEach((option, index) => {
             const buttonY = startY + index * (buttonHeight + buttonSpacing);
@@ -2212,13 +4006,6 @@ class IsometricGridScene extends Phaser.Scene {
                 buttonHeight, 
                 15
             );
-            
-            // Store original button properties for restoration
-            buttonBg.originalFillStyle = {
-                color1: 0x3498DB,
-                color2: 0x2980B9
-            };
-            buttonBg.isDisabled = false;
             
             // Make it interactive
             buttonBg.setInteractive(
@@ -2243,7 +4030,7 @@ class IsometricGridScene extends Phaser.Scene {
 
             // Hover effects
             buttonBg.on('pointerover', () => {
-                if (correctAnswered || buttonBg.isDisabled) return; // Don't show hover effects if game over or button disabled
+                if (answered) return; // Don't show hover effects if already answered
                 buttonBg.clear();
                 buttonBg.fillGradientStyle(0x2980B9, 0x1A5276, 0x2980B9, 0x1A5276, 1);
                 buttonBg.fillRoundedRect(
@@ -2264,9 +4051,9 @@ class IsometricGridScene extends Phaser.Scene {
             });
 
             buttonBg.on('pointerout', () => {
-                if (correctAnswered || buttonBg.isDisabled) return; // Don't restore if disabled or game over
+                if (answered) return; // Don't show hover effects if already answered
                 buttonBg.clear();
-                buttonBg.fillGradientStyle(buttonBg.originalFillStyle.color1, buttonBg.originalFillStyle.color2, buttonBg.originalFillStyle.color1, buttonBg.originalFillStyle.color2, 1);
+                buttonBg.fillGradientStyle(0x3498DB, 0x2980B9, 0x3498DB, 0x2980B9, 1);
                 buttonBg.fillRoundedRect(
                     dialogX + 50, 
                     buttonY, 
@@ -2286,46 +4073,36 @@ class IsometricGridScene extends Phaser.Scene {
 
             // Click handler
             buttonBg.on('pointerdown', () => {
-                // Prevent clicks on disabled buttons or if already answered correctly
-                if (correctAnswered || buttonBg.isDisabled) return;
+                // Prevent multiple clicks
+                if (answered) return;
+                answered = true;
+                
+                // Disable all buttons by removing their interactivity
+                this.quizContainer.list.forEach(child => {
+                    if (child.input) {
+                        child.disableInteractive();
+                    }
+                });
                 
                 this.sounds.button.play();
                 
                 if (option === answer) {
-                    // Correct answer - celebrate and close quiz immediately
-                    correctAnswered = true;
-                    
-                    // Disable all buttons
-                    this.quizContainer.list.forEach(child => {
-                        if (child.input) {
-                            child.disableInteractive();
-                        }
-                    });
-                    
+                    // Correct answer - celebrate and complete quiz
                     this.celebrateCorrectAnswer(buttonBg, buttonText);
-                    
-                    // Close quiz immediately after brief celebration
-                    this.time.delayedCall(1000, () => {
+                    this.time.delayedCall(2000, () => {
                         this.quizContainer.destroy();
-                        this.quizActive = false;
+                        this.quizActive = false; // Reset flag when quiz is completed
+                        this.showVictoryCelebration();
                     });
                 } else {
-                    // Wrong answer - mark this button as wrong and disabled
+                    // Wrong answer
                     attempts++;
-                    buttonBg.isDisabled = true;
                     this.showWrongAnswer(buttonBg, buttonText, attempts >= maxAttempts);
                     
-                    // If max attempts reached, disable all buttons and end quiz
                     if (attempts >= maxAttempts) {
-                        this.quizContainer.list.forEach(child => {
-                            if (child.input) {
-                                child.disableInteractive();
-                            }
-                        });
-                        
                         this.time.delayedCall(2000, () => {
                             this.quizContainer.destroy();
-                            this.quizActive = false;
+                            this.quizActive = false; // Reset flag when quiz is completed
                             this.showMessage('Try again next time! 🌟', '#FF6B6B');
                         });
                     }
@@ -2366,7 +4143,7 @@ class IsometricGridScene extends Phaser.Scene {
             ease: 'Power2',
             onComplete: () => {
                 coin.destroy();
-                // Give 20 coins - update both scenes to keep them in sync
+                // Always add exactly 20 coins - update both scenes to keep them in sync
                 this.coins += 20;
                 uiScene.coins += 20;
                 uiScene.updateCoins(uiScene.coins);
@@ -3038,12 +4815,11 @@ class IsometricGridScene extends Phaser.Scene {
         this.shopDialog.add(closeBtn);
 
         // Dragon Shop items grid - Dragon Theme
-        const iconKeys = ['hut', 'hut-u1', 'shrine', 'shrine-u1', 'temple', 'temple-u1'];
+        const iconKeys = ['hut', 'hut-u1', 'shrine', 'temple', 'temple-u1'];
         const itemNames = {
             hut: 'Dragon Hut',
             'hut-u1': 'Upgraded Hut',
             shrine: 'Dragon Shrine',
-            'shrine-u1': 'Legendary Shrine',
             temple: 'Temple',
             'temple-u1': 'Legendary Temple'
         };
@@ -3495,9 +5271,9 @@ class IsometricGridScene extends Phaser.Scene {
             this.unlockLevel1();
         }
         
-        // Check if level 2 should be completed (all items unlocked AND population >= 600)
-        if (!this.level2Completed && this.level1Unlocked && this.population >= 600) {
-            this.completeLevel2();
+        // Check if level 2 should be unlocked (reaching 300 population for first time)
+        if (!this.level2Unlocked && this.maxPopulationReached >= 300) {
+            this.unlockLevel2();
         }
     }
     
@@ -3505,138 +5281,84 @@ class IsometricGridScene extends Phaser.Scene {
         this.level1Unlocked = true;
         this.currentLevel = 1;
         
-        // No longer give free items - players must purchase them
-        // Just unlock the ability to use u1 items they've purchased
+        // Level 1 unlocks basic rewards (no u1 items yet)
+        const level1UnlockCounts = {
+            'hut': 3,        // Give 3 more basic huts
+            'shrine': 2      // Give 2 more shrines
+        };
         
-        // Update UI to reflect the unlock (items may now be draggable)
-        const uiScene = this.scene.get('UIScene');
-        if (uiScene) {
-            // Refresh all u1 items to make them draggable if owned
-            ['hut-u1', 'shrine-u1', 'temple-u1'].forEach(key => {
-                const currentCount = this.spriteCounters.get(key) || 0;
-                uiScene.updateSpriteCounter(key, currentCount);
-            });
+        // Add to sprite counters
+        Object.keys(level1UnlockCounts).forEach(key => {
+            const currentCount = this.spriteCounters.get(key) || 0;
+            const newCount = currentCount + level1UnlockCounts[key];
+            this.spriteCounters.set(key, newCount);
             
-            // Update the population bar to show extended range
-            uiScene.updatePopulationBar();
-        }
-        
-        // Show level up message
-        this.showLevelUpMessage();
-    }
-    
-    showLevelUpMessage() {
-        // Create a container for the level up dialog
-        const dialogWidth = 400;
-        const dialogHeight = 350;
-        const dialogX = this.cameras.main.width / 2;
-        const dialogY = this.cameras.main.height / 2;
-        
-        // Create dialog background
-        const dialogBg = this.add.graphics();
-        dialogBg.fillStyle(0x2C3E50, 0.95);
-        dialogBg.fillRoundedRect(dialogX - dialogWidth/2, dialogY - dialogHeight/2, dialogWidth, dialogHeight, 20);
-        dialogBg.lineStyle(4, 0xFFD700, 1);
-        dialogBg.strokeRoundedRect(dialogX - dialogWidth/2, dialogY - dialogHeight/2, dialogWidth, dialogHeight, 20);
-        dialogBg.setDepth(3000);
-        
-        // Title
-        const titleText = this.add.text(dialogX, dialogY - dialogHeight/2 + 40, '🎉 LEVEL UP! 🎉', {
-            fontSize: '32px',
-            color: '#FFD700',
-            fontStyle: 'bold',
-            fontFamily: 'Comic Sans MS, cursive, sans-serif',
-            align: 'center'
-        }).setOrigin(0.5).setDepth(3001);
-        
-        // Subtitle
-        const subtitleText = this.add.text(dialogX, dialogY - dialogHeight/2 + 80, 'New Buildings Unlocked!', {
-            fontSize: '18px',
-            color: '#ECF0F1',
-            fontFamily: 'Comic Sans MS, cursive, sans-serif',
-            align: 'center'
-        }).setOrigin(0.5).setDepth(3001);
-        
-        // Get unlocked items
-        const unlockedItems = ['hut-u1', 'shrine-u1', 'temple-u1'];
-        const startY = dialogY - 50;
-        
-        // Create container for all dialog elements
-        const dialogContainer = this.add.container(0, 0);
-        dialogContainer.add([dialogBg, titleText, subtitleText]);
-        dialogContainer.setDepth(3000);
-        
-        // Show each unlocked item with image
-        unlockedItems.forEach((itemKey, index) => {
-            const config = this.assetConfig[itemKey];
-            const itemY = startY + (index * 80);
-            
-            // Item background
-            const itemBg = this.add.graphics();
-            itemBg.fillStyle(0x34495E, 0.8);
-            itemBg.fillRoundedRect(dialogX - 180, itemY - 25, 360, 60, 10);
-            itemBg.lineStyle(2, 0x52C4B0, 0.8);
-            itemBg.strokeRoundedRect(dialogX - 180, itemY - 25, 360, 60, 10);
-            itemBg.setDepth(3001);
-            dialogContainer.add(itemBg);
-            
-            // Item image
-            const itemImage = this.add.image(dialogX - 140, itemY, itemKey);
-            const imageScale = 40 / Math.max(itemImage.width, itemImage.height);
-            itemImage.setScale(imageScale);
-            itemImage.setDepth(3002);
-            dialogContainer.add(itemImage);
-            
-            // Item name
-            const itemName = itemKey === 'hut-u1' ? 'Upgraded Hut' : 
-                           itemKey === 'shrine-u1' ? 'Legendary Shrine' : 
-                           'Legendary Temple';
-            const nameText = this.add.text(dialogX - 80, itemY - 15, itemName, {
-                fontSize: '16px',
-                color: '#ECF0F1',
-                fontStyle: 'bold',
-                fontFamily: 'Arial, sans-serif'
-            }).setOrigin(0, 0).setDepth(3002);
-            dialogContainer.add(nameText);
-            
-            // Population boost
-            const populationText = this.add.text(dialogX - 80, itemY + 5, `Population: +${config.population}`, {
-                fontSize: '14px',
-                color: '#52C4B0',
-                fontFamily: 'Arial, sans-serif'
-            }).setOrigin(0, 0).setDepth(3002);
-            dialogContainer.add(populationText);
-            
-            // Cost
-            const costText = this.add.text(dialogX + 60, itemY - 5, `💰 ${config.price}`, {
-                fontSize: '16px',
-                color: '#F39C12',
-                fontStyle: 'bold',
-                fontFamily: 'Arial, sans-serif'
-            }).setOrigin(0, 0).setDepth(3002);
-            dialogContainer.add(costText);
+            // Update UI counter
+            const uiScene = this.scene.get('UIScene');
+            if (uiScene) {
+                uiScene.updateSpriteCounter(key, newCount);
+            }
         });
         
-        // Bottom message
-        const bottomText = this.add.text(dialogX, dialogY + dialogHeight/2 - 40, 'Purchase them from the shop! 🛒\nPopulation bar extended to 600! 📊', {
-            fontSize: '16px',
-            color: '#BDC3C7',
+        // Show level 1 message
+        this.showLevel1Message();
+    }
+    
+    unlockLevel2() {
+        this.level2Unlocked = true;
+        this.currentLevel = 2;
+        
+        // Level 2 unlocks u1 sprites
+        const level2UnlockCounts = {
+            'hut-u1': 2,     // Give 2 upgraded huts
+            'temple-u1': 1   // Give 1 legendary temple
+        };
+        
+        // Add to sprite counters
+        Object.keys(level2UnlockCounts).forEach(key => {
+            const currentCount = this.spriteCounters.get(key) || 0;
+            const newCount = currentCount + level2UnlockCounts[key];
+            this.spriteCounters.set(key, newCount);
+            
+            // Update UI counter
+            const uiScene = this.scene.get('UIScene');
+            if (uiScene) {
+                uiScene.updateSpriteCounter(key, newCount);
+            }
+        });
+        
+        // Show level 2 message
+        this.showLevel2Message();
+    }
+    
+    showLevel1Message() {
+        // Create a congratulatory message for reaching level 1
+        const messageText = '🎉 LEVEL 1 REACHED! 🎉\n\nBasic expansion unlocked!\n• +3 Huts\n• +2 Shrines\n\nKeep building to unlock\nupgraded buildings at Level 2!';
+        
+        const message = this.add.text(this.cameras.main.width / 2, this.cameras.main.height / 2, messageText, {
+            fontSize: '28px',
+            color: '#4CAF50',
+            fontStyle: 'bold',
             fontFamily: 'Comic Sans MS, cursive, sans-serif',
-            align: 'center'
-        }).setOrigin(0.5).setDepth(3001);
-        dialogContainer.add(bottomText);
+            align: 'center',
+            stroke: '#2C3E50',
+            strokeThickness: 4,
+            shadow: { offsetX: 3, offsetY: 3, color: '#000000', blur: 5, fill: true }
+        }).setOrigin(0.5);
+        
+        message.setDepth(3000);
         
         // Add celebratory animation
-        dialogContainer.setScale(0);
+        message.setScale(0);
         this.tweens.add({
-            targets: dialogContainer,
+            targets: message,
             scaleX: 1.1,
             scaleY: 1.1,
             duration: 500,
             ease: 'Back.easeOut',
             onComplete: () => {
                 this.tweens.add({
-                    targets: dialogContainer,
+                    targets: message,
                     scaleX: 1,
                     scaleY: 1,
                     duration: 200,
@@ -3645,9 +5367,64 @@ class IsometricGridScene extends Phaser.Scene {
             }
         });
         
-        // Add pulsing effect to title
+        // Remove message after delay
+        this.time.delayedCall(4000, () => {
+            this.tweens.add({
+                targets: message,
+                alpha: 0,
+                scaleX: 0,
+                scaleY: 0,
+                duration: 500,
+                ease: 'Power2',
+                onComplete: () => {
+                    message.destroy();
+                }
+            });
+        });
+        
+        // Play celebration sound
+        this.sounds.correct.play();
+    }
+    
+    showLevel2Message() {
+        // Create a congratulatory message for reaching level 2
+        const messageText = '🎉 LEVEL 2 REACHED! 🎉\n\nUpgraded buildings unlocked!\n• Hut-U1: +15 population\n• Temple-U1: +100 population\n\nNow you can build advanced structures!';
+        
+        const message = this.add.text(this.cameras.main.width / 2, this.cameras.main.height / 2, messageText, {
+            fontSize: '32px',
+            color: '#FFD700',
+            fontStyle: 'bold',
+            fontFamily: 'Comic Sans MS, cursive, sans-serif',
+            align: 'center',
+            stroke: '#2C3E50',
+            strokeThickness: 4,
+            shadow: { offsetX: 3, offsetY: 3, color: '#000000', blur: 5, fill: true }
+        }).setOrigin(0.5);
+        
+        message.setDepth(3000);
+        
+        // Add celebratory animation
+        message.setScale(0);
         this.tweens.add({
-            targets: titleText,
+            targets: message,
+            scaleX: 1.2,
+            scaleY: 1.2,
+            duration: 500,
+            ease: 'Back.easeOut',
+            onComplete: () => {
+                this.tweens.add({
+                    targets: message,
+                    scaleX: 1,
+                    scaleY: 1,
+                    duration: 200,
+                    ease: 'Power2'
+                });
+            }
+        });
+        
+        // Add pulsing effect
+        this.tweens.add({
+            targets: message,
             alpha: 0.8,
             duration: 1000,
             yoyo: true,
@@ -3655,17 +5432,17 @@ class IsometricGridScene extends Phaser.Scene {
             ease: 'Sine.easeInOut'
         });
         
-        // Remove dialog after delay
-        this.time.delayedCall(6000, () => {
+        // Remove message after delay
+        this.time.delayedCall(5000, () => {
             this.tweens.add({
-                targets: dialogContainer,
+                targets: message,
                 alpha: 0,
                 scaleX: 0,
                 scaleY: 0,
                 duration: 500,
                 ease: 'Power2',
                 onComplete: () => {
-                    dialogContainer.destroy();
+                    message.destroy();
                 }
             });
         });
@@ -3736,179 +5513,6 @@ class IsometricGridScene extends Phaser.Scene {
             
             return yDiff;
         });
-    }
-    
-    completeLevel2() {
-        this.level2Completed = true;
-        this.currentLevel = 2;
-        
-        // Show level 2 completion message
-        this.showLevel2CompletionMessage();
-    }
-    
-    showLevel2CompletionMessage() {
-        // Create a container for the completion dialog
-        const dialogWidth = 500;
-        const dialogHeight = 400;
-        const dialogX = this.cameras.main.width / 2;
-        const dialogY = this.cameras.main.height / 2;
-        
-        // Create dialog background with special styling for completion
-        const dialogBg = this.add.graphics();
-        dialogBg.fillGradientStyle(0x8E44AD, 0x3498DB, 0x1ABC9C, 0xF39C12, 0.95);
-        dialogBg.fillRoundedRect(dialogX - dialogWidth/2, dialogY - dialogHeight/2, dialogWidth, dialogHeight, 25);
-        dialogBg.lineStyle(5, 0xFFD700, 1);
-        dialogBg.strokeRoundedRect(dialogX - dialogWidth/2, dialogY - dialogHeight/2, dialogWidth, dialogHeight, 25);
-        dialogBg.setDepth(3000);
-        
-        // Add a glow effect
-        const glowBg = this.add.graphics();
-        glowBg.fillStyle(0xFFD700, 0.3);
-        glowBg.fillRoundedRect(dialogX - dialogWidth/2 - 10, dialogY - dialogHeight/2 - 10, dialogWidth + 20, dialogHeight + 20, 30);
-        glowBg.setDepth(2999);
-        
-        // Title
-        const titleText = this.add.text(dialogX, dialogY - dialogHeight/2 + 50, '🏆 LEVEL 2 COMPLETE! 🏆', {
-            fontSize: '36px',
-            color: '#FFD700',
-            fontStyle: 'bold',
-            fontFamily: 'Comic Sans MS, cursive, sans-serif',
-            align: 'center',
-            stroke: '#2C3E50',
-            strokeThickness: 4
-        }).setOrigin(0.5).setDepth(3001);
-        
-        // Subtitle
-        const subtitleText = this.add.text(dialogX, dialogY - dialogHeight/2 + 100, 'MAXIMUM POPULATION ACHIEVED!', {
-            fontSize: '20px',
-            color: '#FFFFFF',
-            fontStyle: 'bold',
-            fontFamily: 'Comic Sans MS, cursive, sans-serif',
-            align: 'center',
-            stroke: '#2C3E50',
-            strokeThickness: 2
-        }).setOrigin(0.5).setDepth(3001);
-        
-        // Achievement details
-        const achievementText = this.add.text(dialogX, dialogY - 50, '✨ ALL BUILDINGS UNLOCKED ✨\n🌟 POPULATION: 600/600 🌟\n🎯 CITY MASTERY COMPLETE 🎯', {
-            fontSize: '18px',
-            color: '#ECF0F1',
-            fontFamily: 'Comic Sans MS, cursive, sans-serif',
-            align: 'center',
-            stroke: '#2C3E50',
-            strokeThickness: 2
-        }).setOrigin(0.5).setDepth(3001);
-        
-        // Congratulations message
-        const congratsText = this.add.text(dialogX, dialogY + 50, 'Congratulations, Master Builder!\nYou have created the ultimate city!', {
-            fontSize: '16px',
-            color: '#BDC3C7',
-            fontFamily: 'Comic Sans MS, cursive, sans-serif',
-            align: 'center',
-            fontStyle: 'italic'
-        }).setOrigin(0.5).setDepth(3001);
-        
-        // Final message
-        const finalText = this.add.text(dialogX, dialogY + dialogHeight/2 - 50, '🎊 Continue building and exploring! 🎊', {
-            fontSize: '18px',
-            color: '#F39C12',
-            fontFamily: 'Comic Sans MS, cursive, sans-serif',
-            align: 'center',
-            fontStyle: 'bold'
-        }).setOrigin(0.5).setDepth(3001);
-        
-        // Create container for all dialog elements
-        const dialogContainer = this.add.container(0, 0);
-        dialogContainer.add([glowBg, dialogBg, titleText, subtitleText, achievementText, congratsText, finalText]);
-        dialogContainer.setDepth(3000);
-        
-        // Add epic celebratory animation
-        dialogContainer.setScale(0);
-        this.tweens.add({
-            targets: dialogContainer,
-            scaleX: 1.2,
-            scaleY: 1.2,
-            duration: 800,
-            ease: 'Back.easeOut',
-            onComplete: () => {
-                this.tweens.add({
-                    targets: dialogContainer,
-                    scaleX: 1,
-                    scaleY: 1,
-                    duration: 300,
-                    ease: 'Power2'
-                });
-            }
-        });
-        
-        // Add rainbow pulsing effect to title
-        this.tweens.add({
-            targets: titleText,
-            scaleX: 1.1,
-            scaleY: 1.1,
-            duration: 1000,
-            yoyo: true,
-            repeat: -1,
-            ease: 'Sine.easeInOut'
-        });
-        
-        // Add floating effect to achievement text
-        this.tweens.add({
-            targets: achievementText,
-            y: achievementText.y - 10,
-            duration: 2000,
-            yoyo: true,
-            repeat: -1,
-            ease: 'Sine.easeInOut'
-        });
-        
-        // Remove dialog after extended delay (longer for such an achievement)
-        this.time.delayedCall(10000, () => {
-            this.tweens.add({
-                targets: dialogContainer,
-                alpha: 0,
-                scaleX: 0,
-                scaleY: 0,
-                duration: 1000,
-                ease: 'Power2',
-                onComplete: () => {
-                    dialogContainer.destroy();
-                }
-            });
-        });
-        
-        // Play epic celebration sound (use correct sound)
-        this.sounds.correct.play();
-        
-        // Add screen particles effect
-        this.createLevel2ParticleEffect();
-    }
-    
-    createLevel2ParticleEffect() {
-        // Create celebratory particles across the screen
-        for (let i = 0; i < 20; i++) {
-            const particle = this.add.text(
-                Phaser.Math.Between(0, this.cameras.main.width),
-                Phaser.Math.Between(0, this.cameras.main.height),
-                ['⭐', '🌟', '✨', '🎉', '🏆', '👑'][Phaser.Math.Between(0, 5)],
-                { fontSize: '24px' }
-            );
-            particle.setDepth(3500);
-            
-            // Animate particles
-            this.tweens.add({
-                targets: particle,
-                y: particle.y - 200,
-                alpha: 0,
-                scaleX: 2,
-                scaleY: 2,
-                duration: 3000,
-                ease: 'Power2',
-                onComplete: () => {
-                    particle.destroy();
-                }
-            });
-        }
     }
 }
 
@@ -4009,7 +5613,7 @@ class UIScene extends Phaser.Scene {
 
     createToolbarPanel() {
         // Icon setup
-        const iconKeys = ['hut', 'hut-u1', 'shrine', 'shrine-u1', 'temple', 'temple-u1'];
+        const iconKeys = ['hut', 'hut-u1', 'shrine', 'temple', 'temple-u1'];
         const iconSpacing = this.tileSize + 20; // Increased spacing for gaps between boxes
         const iconMargin = 16;
         const panelPadding = 12;
@@ -4132,41 +5736,18 @@ class UIScene extends Phaser.Scene {
             icon.setScale(scale);
             icon.setOrigin(0.5, 0.5); // Center the icon properly
             icon.setInteractive();
-            
-            // Check level requirements
-            const config = this.parentScene.assetConfig[key];
-            const requiresLevel = config ? config.requiresLevel : 0;
-            const isLevelLocked = requiresLevel > this.parentScene.currentLevel;
-            
-            // Only make draggable if level requirement is met
-            if (!isLevelLocked) {
-                this.input.setDraggable(icon);
-            }
-            
+            this.input.setDraggable(icon);
             icon.textureKey = key;
             
-            // Set initial alpha based on sprite count and level lock
+            // Set initial alpha based on sprite count
             const initialCount = this.parentScene.spriteCounters.get(key);
-            if (initialCount <= 0 || isLevelLocked) {
-                icon.setAlpha(isLevelLocked ? 0.3 : 0.5); // More transparent if level locked
-                if (initialCount <= 0) {
-                    icon.disableInteractive();
-                }
-                slotBg.setAlpha(isLevelLocked ? 0.3 : 0.5);
+            if (initialCount <= 0) {
+                icon.setAlpha(0.5);
+                icon.disableInteractive();
+                slotBg.setAlpha(0.5);
             }
             
             iconContainer.add(icon);
-            
-            // Add lock overlay if level locked
-            if (isLevelLocked) {
-                const lockIcon = this.add.text(0, 5, '🔒', {
-                    fontSize: '16px'
-                }).setOrigin(0.5);
-                iconContainer.add(lockIcon);
-                
-                // Store reference for later removal
-                icon.lockIcon = lockIcon;
-            }
             
             // Create enhanced counter badge
             const counterBg = this.add.graphics();
@@ -4219,14 +5800,12 @@ class UIScene extends Phaser.Scene {
                 if (remainingSprites <= 0) {
                     return; // Don't allow drag if no sprites left
                 }
-                
-                // Check level requirements
-                const config = this.parentScene.assetConfig[icon.textureKey];
-                const requiresLevel = config ? config.requiresLevel : 0;
-                if (requiresLevel > this.parentScene.currentLevel) {
-                    // Show feedback that item is level locked
-                    this.parentScene.showMessage(`Requires Level ${requiresLevel}!`, '#ff6b6b');
-                    return; // Don't allow drag if level requirement not met
+
+                // Check if u1 items are locked (u1 items only usable after level 2)
+                if (icon.textureKey.includes('-u1') && !this.parentScene.level2Unlocked) {
+                    // Show lock message
+                    this.parentScene.showMessage('🔒 U1 buildings unlock at Level 2 (300 population)!', '#ff6b6b');
+                    return; // Don't allow drag of u1 items until level 2
                 }
 
                 this.textures.get(icon.textureKey).setFilter(Phaser.Textures.FilterMode.NEAREST);
@@ -4441,9 +6020,17 @@ class UIScene extends Phaser.Scene {
         if (!this.populationBarFill) return;
         
         // Dynamic maximum population based on level
-        const baseMaxPopulation = 150; // Level 0 max
-        const extendedMaxPopulation = 600; // Level 1+ max
-        const maxPopulation = this.parentScene.level1Unlocked ? extendedMaxPopulation : baseMaxPopulation;
+        let maxPopulation, nextLevelThreshold;
+        if (this.parentScene.currentLevel === 0) {
+            maxPopulation = 150; // Level 0 -> Level 1 threshold
+            nextLevelThreshold = 150;
+        } else if (this.parentScene.currentLevel === 1) {
+            maxPopulation = 300; // Level 1 -> Level 2 threshold  
+            nextLevelThreshold = 300;
+        } else {
+            maxPopulation = 300; // Max reached
+            nextLevelThreshold = 300;
+        }
         
         // Calculate fill percentage
         const fillPercentage = Math.min(this.population / maxPopulation, 1);
@@ -4453,81 +6040,39 @@ class UIScene extends Phaser.Scene {
         this.populationBarFill.clear();
         
         if (fillWidth > 0) {
-            // For extended bar (level 1+), show different visual segments
-            if (this.parentScene.level1Unlocked && maxPopulation === extendedMaxPopulation) {
-                // Show completed first segment (0-150)
-                const firstSegmentWidth = (this.barWidth - 4) * (baseMaxPopulation / extendedMaxPopulation);
-                
-                // First segment (completed) - green
-                this.populationBarFill.fillGradientStyle(0x27AE60, 0x2ECC71, 0x27AE60, 0x2ECC71, 1);
-                this.populationBarFill.fillRoundedRect(this.barX + 2, this.barY + 2, firstSegmentWidth, this.barHeight - 4, 8);
-                
-                // Add completed segment shine
-                this.populationBarFill.fillGradientStyle(0xFFFFFF, 0xFFFFFF, 0xFFFFFF, 0xFFFFFF, 0.4);
-                this.populationBarFill.fillRoundedRect(this.barX + 2, this.barY + 2, firstSegmentWidth, (this.barHeight - 4) / 3, 8);
-                
-                // Second segment (current progress beyond 150)
-                if (this.population > baseMaxPopulation) {
-                    const secondSegmentProgress = this.population - baseMaxPopulation;
-                    const secondSegmentMax = extendedMaxPopulation - baseMaxPopulation;
-                    const secondSegmentPercentage = Math.min(secondSegmentProgress / secondSegmentMax, 1);
-                    const secondSegmentWidth = (this.barWidth - 4 - firstSegmentWidth) * secondSegmentPercentage;
-                    
-                    // Choose color based on progress in second segment
-                    let fillColor1, fillColor2;
-                    if (secondSegmentPercentage < 0.3) {
-                        // Early second segment - blue to cyan
-                        fillColor1 = 0x3498DB;
-                        fillColor2 = 0x1ABC9C;
-                    } else if (secondSegmentPercentage < 0.7) {
-                        // Mid second segment - cyan to purple
-                        fillColor1 = 0x1ABC9C;
-                        fillColor2 = 0x9B59B6;
-                    } else {
-                        // Late second segment - purple to gold
-                        fillColor1 = 0x9B59B6;
-                        fillColor2 = 0xFFD700;
-                    }
-                    
-                    this.populationBarFill.fillGradientStyle(fillColor1, fillColor2, fillColor1, fillColor2, 1);
-                    this.populationBarFill.fillRoundedRect(this.barX + 2 + firstSegmentWidth, this.barY + 2, secondSegmentWidth, this.barHeight - 4, 8);
-                    
-                    // Add second segment shine
-                    this.populationBarFill.fillGradientStyle(0xFFFFFF, 0xFFFFFF, 0xFFFFFF, 0xFFFFFF, 0.3);
-                    this.populationBarFill.fillRoundedRect(this.barX + 2 + firstSegmentWidth, this.barY + 2, secondSegmentWidth, (this.barHeight - 4) / 3, 8);
-                }
-                
-                // Add visual separator between segments
-                this.populationBarFill.lineStyle(2, 0xFFFFFF, 0.6);
-                this.populationBarFill.lineBetween(
-                    this.barX + 2 + firstSegmentWidth, this.barY + 2,
-                    this.barX + 2 + firstSegmentWidth, this.barY + this.barHeight - 2
-                );
-            } else {
-                // Regular single-segment bar (level 0)
-                let fillColor1, fillColor2;
-                if (fillPercentage < 0.3) {
-                    // Low population - red to orange
-                    fillColor1 = 0xE74C3C;
-                    fillColor2 = 0xE67E22;
-                } else if (fillPercentage < 0.7) {
-                    // Medium population - orange to yellow
-                    fillColor1 = 0xE67E22;
-                    fillColor2 = 0xF1C40F;
+            // Create gradient fill based on population level and current level
+            let fillColor1, fillColor2;
+            if (this.parentScene.currentLevel === 0) {
+                // Level 0: Green progression
+                if (fillPercentage < 0.5) {
+                    fillColor1 = 0x4CAF50;
+                    fillColor2 = 0x66BB6A;
                 } else {
-                    // High population - yellow to green
-                    fillColor1 = 0xF1C40F;
-                    fillColor2 = 0x27AE60;
+                    fillColor1 = 0x66BB6A;
+                    fillColor2 = 0x81C784;
                 }
-                
-                // Fill with gradient
-                this.populationBarFill.fillGradientStyle(fillColor1, fillColor2, fillColor1, fillColor2, 1);
-                this.populationBarFill.fillRoundedRect(this.barX + 2, this.barY + 2, fillWidth, this.barHeight - 4, 8);
-                
-                // Add shine effect
-                this.populationBarFill.fillGradientStyle(0xFFFFFF, 0xFFFFFF, 0xFFFFFF, 0xFFFFFF, 0.3);
-                this.populationBarFill.fillRoundedRect(this.barX + 2, this.barY + 2, fillWidth, (this.barHeight - 4) / 3, 8);
+            } else if (this.parentScene.currentLevel === 1) {
+                // Level 1: Blue progression
+                if (fillPercentage < 0.5) {
+                    fillColor1 = 0x2196F3;
+                    fillColor2 = 0x42A5F5;
+                } else {
+                    fillColor1 = 0x42A5F5;
+                    fillColor2 = 0x64B5F6;
+                }
+            } else {
+                // Level 2+: Gold progression
+                fillColor1 = 0xFFD700;
+                fillColor2 = 0xFFC107;
             }
+            
+            // Fill with gradient
+            this.populationBarFill.fillGradientStyle(fillColor1, fillColor2, fillColor1, fillColor2, 1);
+            this.populationBarFill.fillRoundedRect(this.barX + 2, this.barY + 2, fillWidth, this.barHeight - 4, 8);
+            
+            // Add shine effect
+            this.populationBarFill.fillGradientStyle(0xFFFFFF, 0xFFFFFF, 0xFFFFFF, 0xFFFFFF, 0.3);
+            this.populationBarFill.fillRoundedRect(this.barX + 2, this.barY + 2, fillWidth, (this.barHeight - 4) / 3, 8);
         }
         
         // Update text to show current/max with level info
@@ -4569,7 +6114,6 @@ class UIScene extends Phaser.Scene {
             hut: '🏠',
             'hut-u1': '🏡',
             shrine: '⛩️',
-            'shrine-u1': '🏯',
             temple: '🏛️',
             'temple-u1': '🏯',
             legendary_temple: '🏯',
@@ -4592,29 +6136,48 @@ class UIScene extends Phaser.Scene {
         });
         
         if (!hasBuildings) {
-            tooltipText = 'Build huts and temples to\nincrease your city population!\n\n🏠 Hut = +10 population\n🏡 Hut-U1 = +15 population (purchasable)\n🏛️ Temple = +40 population\n🏯 Shrine = +20 population (purchasable)\n🏯 Shrine-U1 = +35 population (purchasable)';
+            tooltipText = 'Build huts and temples to\nincrease your city population!\n\n🏠 Hut = +10 population\n🏡 Hut-U1 = +15 population\n🏛️ Temple = +40 population';
             
-            // Add unlock information if not at level 1 yet
+            // Add unlock information based on current level
             if (!this.parentScene.level1Unlocked) {
-                tooltipText += '\n\n🔒 U1 buildings can be bought but not used until Level 1!';
+                tooltipText += '\n\n🔒 Level 1: More buildings at 150 population\n🔒 Level 2: U1 buildings at 300 population';
+            } else if (!this.parentScene.level2Unlocked) {
+                tooltipText += '\n\n✅ Level 1: Complete!\n🔒 Level 2: U1 buildings at 300 population';
+            } else {
+                tooltipText += '\n\n✅ All levels unlocked!';
             }
         } else {
-            const baseMaxPopulation = 150;
-            const extendedMaxPopulation = 600;
-            const maxPopulation = this.parentScene.level1Unlocked ? extendedMaxPopulation : baseMaxPopulation;
+            // Determine current target and level text
+            let maxPopulation, targetText;
             const currentLevel = this.parentScene.currentLevel;
-            const levelText = currentLevel > 0 ? ` (Level ${currentLevel})` : '';
-            tooltipText += `\nTotal Population: ${this.population}/${maxPopulation}${levelText}`;
             
-            // Add progress information based on level
-            if (!this.parentScene.level1Unlocked) {
-                const remaining = baseMaxPopulation - this.population;
-                tooltipText += `\n🔒 ${remaining} more to unlock U1 buildings!`;
-            } else if (this.population < extendedMaxPopulation) {
-                const remaining = extendedMaxPopulation - this.population;
-                tooltipText += `\n🎯 ${remaining} more to max population!`;
+            if (currentLevel === 0) {
+                maxPopulation = 150;
+                targetText = ' (→ Lv.1)';
+            } else if (currentLevel === 1) {
+                maxPopulation = 300;
+                targetText = ' (→ Lv.2)';
             } else {
-                tooltipText += '\n🏆 Maximum population reached!';
+                maxPopulation = 300;
+                targetText = ' (Max)';
+            }
+            
+            const levelText = currentLevel > 0 ? ` Lv.${currentLevel}` : '';
+            tooltipText += `\nTotal Population: ${this.population}/${maxPopulation}${targetText}`;
+            
+            // Add progress information
+            if (!this.parentScene.level2Unlocked) {
+                if (!this.parentScene.level1Unlocked) {
+                    const remaining = 150 - this.population;
+                    if (remaining > 0) {
+                        tooltipText += `\n🔒 ${remaining} more to reach Level 1`;
+                    }
+                } else {
+                    const remaining = 300 - this.population;
+                    if (remaining > 0) {
+                        tooltipText += `\n🔒 ${remaining} more to unlock U1 buildings!`;
+                    }
+                }
             }
         }
         
@@ -4723,61 +6286,23 @@ class UIScene extends Phaser.Scene {
                 counterBg.lineStyle(2, 0xFFFFFF, 0.8);
                 counterBg.strokeCircle(slotSize/2 - 10, -slotSize/2 + 8, 12);
                 
-                // Check level requirements
-                const config = this.parentScene.assetConfig[textureKey];
-                const requiresLevel = config ? config.requiresLevel : 0;
-                const isLevelLocked = requiresLevel > this.parentScene.currentLevel;
-                
                 // Update icon and slot appearance
-                if (newCount <= 0 || isLevelLocked) {
-                    icon.setAlpha(isLevelLocked ? 0.3 : 0.5); // More transparent if level locked
-                    slotBg.setAlpha(isLevelLocked ? 0.3 : 0.5);
+                if (newCount <= 0) {
+                    icon.setAlpha(0.5); // Make icon translucent when no sprites left
+                    slotBg.setAlpha(0.5); // Dim the slot background too
+                    icon.disableInteractive(); // Disable dragging
+                    this.input.setDraggable(icon, false); // Ensure dragging is disabled
                     
-                    if (newCount <= 0) {
-                        icon.disableInteractive(); // Disable dragging when no items
-                        this.input.setDraggable(icon, false);
-                        
-                        // Show first zero asset message if not shown before
-                        if (!this.firstZeroAssetShown) {
-                            this.showFirstZeroAssetMessage();
-                            this.firstZeroAssetShown = true;
-                        }
-                    } else if (isLevelLocked) {
-                        // Item available but level locked - keep interactive for shop but not draggable
-                        icon.setInteractive();
-                        this.input.setDraggable(icon, false);
-                    }
-                    
-                    // Add or update lock icon
-                    if (isLevelLocked && !icon.lockIcon) {
-                        const lockIcon = this.add.text(0, 5, '🔒', {
-                            fontSize: '16px'
-                        }).setOrigin(0.5);
-                        iconContainer.add(lockIcon);
-                        icon.lockIcon = lockIcon;
-                        
-                        // Add hover tooltip for locked items
-                        if (!icon.hasLockTooltip) {
-                            icon.on('pointerover', () => {
-                                if (isLevelLocked) {
-                                    this.parentScene.showMessage(`Requires Level ${requiresLevel}!`, '#ff6b6b');
-                                }
-                            });
-                            icon.hasLockTooltip = true;
-                        }
+                    // Show first zero asset message if not shown before
+                    if (!this.firstZeroAssetShown) {
+                        this.showFirstZeroAssetMessage();
+                        this.firstZeroAssetShown = true;
                     }
                 } else {
-                    // Item available and unlocked
                     icon.setAlpha(1);
                     slotBg.setAlpha(1);
                     icon.setInteractive();
                     this.input.setDraggable(icon, true);
-                    
-                    // Remove lock icon if it exists
-                    if (icon.lockIcon) {
-                        icon.lockIcon.destroy();
-                        icon.lockIcon = null;
-                    }
                 }
                 
                 // Add a small bounce animation to the counter when it changes
@@ -4984,7 +6509,7 @@ class UIScene extends Phaser.Scene {
         this.shopDialog.add(closeBtn);
 
         // Shop items grid - Market Stall Style
-        const iconKeys = ['hut', 'hut-u1', 'shrine', 'shrine-u1', 'temple', 'temple-u1'];
+        const iconKeys = ['hut', 'hut-u1', 'shrine', 'temple', 'temple-u1'];
         const itemsPerRow = 4;
         const itemCellWidth = 110;
         const itemCellHeight = 130;
