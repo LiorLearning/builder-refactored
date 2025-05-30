@@ -5,15 +5,21 @@
 class IsometricGridScene extends Phaser.Scene {
     constructor() {
         super({ key: 'IsometricGridScene' });
+    }
+
+    // ===== INITIALIZATION =====
+    initializeFromConfig() {
+        // Load configuration from GameConfig
+        const config = window.GameConfig || GameConfig;
         
         // ===== CLASS PROPERTIES =====
         // Grid and tile properties
-        this.tileSize = 64; // Size of the diamond tile
-        this.gridSize = 10; // 10x10 grid
+        this.tileSize = config.tileSize;
+        this.gridSize = config.gridSize;
         this.tiles = [];
         this.tileStates = new Map(); // Map to store tile states
         this.hoveredPlacementTiles = [];
-        this.showGrid = false; // Grid is hidden by default (toggle available in dev mode)
+        this.showGrid = config.showGrid;
         
         // Drag and drop properties
         this.draggedItem = null;
@@ -22,60 +28,55 @@ class IsometricGridScene extends Phaser.Scene {
         this.rotateButton = null; // Track the rotate button
         
         // View and zoom properties
-        this.zoomLevel = 1; // Track current zoom level
-        this.minZoom = 1; // Minimum zoom level (100% of original size)
-        this.maxZoom = 2; // Maximum zoom level (200% of original size)
-        this.baseScale = 1; // Base scale for all elements
+        this.zoomLevel = config.zoomLevel;
+        this.minZoom = config.minZoom;
+        this.maxZoom = config.maxZoom;
+        this.baseScale = config.baseScale;
         
         // Developer mode properties
-        this.developerMode = false; // Developer mode state
-        this.restrictionMode = false; // Tile restriction mode
+        this.developerMode = config.developerMode;
+        this.restrictionMode = config.restrictionMode;
         this.restrictedTiles = new Set(); // Set to store restricted tile coordinates
-        this.devModeKeySequence = ''; // Store key sequence for developer mode
+        this.devModeKeySequence = config.devModeKeySequence;
         this.devModeTimeout = null; // Timeout for key sequence reset
         
         // Game state properties
-        this.coins = 0; // Track number of coins
-        this.firstZeroAssetShown = false; // Track if first zero asset message has been shown
-        this.welcomeMessageShown = false; // Track if welcome message has been shown
-        this.secondWelcomeMessageShown = false; // Track if second welcome message has been shown
-        this.quizActive = false; // Add flag to track if quiz is active
+        this.coins = config.coins;
+        this.firstZeroAssetShown = config.firstZeroAssetShown;
+        this.welcomeMessageShown = config.welcomeMessageShown;
+        this.secondWelcomeMessageShown = config.secondWelcomeMessageShown;
+        this.quizActive = config.quizActive;
         
         // Population tracking
-        this.population = 0; // Current population count
-        this.populationBoosts = {
-            hut: 5,           // Each hut gives +5 population
-            shrine: 20,       // Each shrine gives +20 population (to be added)
-            temple: 40,       // Each mini time temple gives +40 population
-            legendary_temple: 70  // Each legendary time temple gives +100 population (to be added)
-        };
+        this.population = config.population;
+        this.populationBoosts = { ...config.populationBoosts };
         
         // Level system
-        this.currentLevel = 0; // Track current level (0 = starting, 1 = after first 150 population)
-        this.level1Unlocked = false; // Track if level 1 upgrades have been unlocked
-        this.level2Completed = false; // Track if level 2 has been completed
-        this.maxPopulationReached = 0; // Track the highest population reached
+        this.currentLevel = config.currentLevel;
+        this.level1Unlocked = config.level1Unlocked;
+        this.level2Completed = config.level2Completed;
+        this.maxPopulationReached = config.maxPopulationReached;
         
         // Multi-grid system properties
-        this.currentGridLayer = 0; // Track which grid layer is active (0, 1, or 2)
+        this.currentGridLayer = config.currentGridLayer;
         this.gridLayers = []; // Array to store all three grid layers
         this.gridTiles = []; // Array to store tiles for each grid layer
         this.gridTileStates = []; // Array to store tile states for each grid layer
-        this.gridColors = [0x7cba34, 0x3498db, 0xffff00]; // Green, Blue, Yellow
-        this.gridOffsets = [0, -40, -80]; // Vertical offsets for each grid layer
+        this.gridColors = [...config.gridColors];
+        this.gridOffsets = [...config.gridOffsets];
         
         // Cloud system properties (always visible, independent of grid layers)
         this.clouds = []; // Array to hold active clouds
-        this.cloudSpawnTimer = 10; // Timer for spawning new clouds
-        this.cloudSpawnInterval = 1000; // Spawn a new cloud every 1.5 seconds (faster for better coverage)
-        this.maxClouds = 15; // Maximum number of clouds on screen (increased for grid coverage)
+        this.cloudSpawnTimer = config.cloudSpawnTimer;
+        this.cloudSpawnInterval = config.cloudSpawnInterval;
+        this.maxClouds = config.maxClouds;
         this.cloudContainer = null; // Container for all clouds
         
         // Cloud appearance configuration
-        this.cloudScaleMin = 1.0; // Minimum cloud scale
-        this.cloudScaleMax = 5.0; // Maximum cloud scale
-        this.cloudAlphaMin = 0.5; // Minimum cloud transparency (60%)
-        this.cloudAlphaMax = 1.0; // Maximum cloud transparency (100%)
+        this.cloudScaleMin = config.cloudScaleMin;
+        this.cloudScaleMax = config.cloudScaleMax;
+        this.cloudAlphaMin = config.cloudAlphaMin;
+        this.cloudAlphaMax = config.cloudAlphaMax;
         
         // Audio instances
         this.sounds = {
@@ -85,68 +86,12 @@ class IsometricGridScene extends Phaser.Scene {
             pop: null,
             shop: null
         };
-        this.isMuted = false; // Track mute state
+        this.isMuted = config.isMuted;
         
         // ===== ASSET CONFIGURATION - EDIT THESE VALUES EASILY =====
         // This is the main configuration for all sprites in the game
         // You can easily modify population, prices, initial counts, and display properties here
-        this.assetConfig = {
-            hut: {
-                // Display properties
-                yOffset: this.tileSize / 4 + 6,
-                scale: 1.0,
-                tileSpan: 1,
-                // Game mechanics
-                population: 10,       // 🏠 Population boost (EDIT THIS)
-                price: 50,           // 💰 Shop price (EDIT THIS)
-                initialCount: 2      // 📦 Starting inventory (EDIT THIS)
-            },
-            'hut-u1': {
-                // Display properties
-                yOffset: this.tileSize / 4 + 1,
-                scale: 1.0,
-                tileSpan: 1,
-                // Game mechanics
-                population: 15,       // 🏠 Population boost (EDIT THIS)
-                price: 75,           // 💰 Shop price (EDIT THIS)
-                initialCount: 2,     // 📦 Starting inventory (available for purchase but locked until level 1)
-                requiresLevel: 1     // Level required to use this item
-            },
-            shrine: {
-                yOffset: this.tileSize / 4 + 28,
-                scale: 1.2,
-                tileSpan: 2,
-                population: 20,       // 🏠 Population boost (EDIT THIS)
-                price: 150,          // 💰 Shop price (EDIT THIS)
-                initialCount: 1      // 📦 Starting inventory (EDIT THIS)
-            },
-            'shrine-u1': {
-                yOffset: this.tileSize / 4 + 20,
-                scale: 1.1,
-                tileSpan: 2,
-                population: 35,       // 🏠 Population boost (EDIT THIS)
-                price: 250,          // 💰 Shop price (EDIT THIS)
-                initialCount: 0,     // 📦 Starting inventory (available for purchase but locked until level 1)
-                requiresLevel: 1     // Level required to use this item
-            },
-            temple: {
-                yOffset: this.tileSize / 4 + 28,
-                scale: 1.4,
-                tileSpan: 2,
-                population: 40,       // 🏠 Population boost (EDIT THIS)
-                price: 200,          // 💰 Shop price (EDIT THIS)
-                initialCount: 0      // 📦 Starting inventory (EDIT THIS)
-            },
-            'temple-u1': {
-                yOffset: this.tileSize / 4 + 35,
-                scale: 1.6,
-                tileSpan: 3,
-                population: 70,      // 🏠 Population boost (EDIT THIS)
-                price: 500,          // 💰 Shop price (EDIT THIS)
-                initialCount: 0,     // 📦 Starting inventory (available for purchase but locked until level 1)
-                requiresLevel: 1     // Level required to use this item
-            }
-        };
+        this.assetConfig = { ...config.assetConfig };
         
         // Create backward-compatible references (for existing code)
         this.iconConfig = {};
@@ -155,17 +100,17 @@ class IsometricGridScene extends Phaser.Scene {
         
         // Populate backward-compatible objects from the new unified config
         Object.keys(this.assetConfig).forEach(key => {
-            const config = this.assetConfig[key];
+            const assetConfig = this.assetConfig[key];
             this.iconConfig[key] = {
-                yOffset: config.yOffset,
-                scale: config.scale,
-                tileSpan: config.tileSpan
+                yOffset: assetConfig.yOffset,
+                scale: assetConfig.scale,
+                tileSpan: assetConfig.tileSpan
             };
-            this.spriteInitialCounts[key] = config.initialCount;
-            this.spritePrices[key] = config.price;
+            this.spriteInitialCounts[key] = assetConfig.initialCount;
+            this.spritePrices[key] = assetConfig.price;
         });
         
-        this.toolbarExpanded = false; // Start closed
+        this.toolbarExpanded = config.toolbarExpanded;
         
         // Initialize sprite counters for each icon type
         this.spriteCounters = new Map();
@@ -181,12 +126,16 @@ class IsometricGridScene extends Phaser.Scene {
     }
 
     create() {
+        // Initialize properties from config first
+        this.initializeFromConfig();
+        
         // Initialize audio
-        this.sounds.bgm = this.sound.add('bgm', { loop: true, volume: 0.5 });
-        this.sounds.button = this.sound.add('button', { volume: 0.7 });
-        this.sounds.correct = this.sound.add('correct', { volume: 0.7 });
-        this.sounds.pop = this.sound.add('pop', { volume: 0.7 });
-        this.sounds.shop = this.sound.add('shop', { volume: 0.7 });
+        const audioConfig = window.GameConfig?.audioVolumes || GameConfig.audioVolumes;
+        this.sounds.bgm = this.sound.add('bgm', { loop: true, volume: audioConfig.bgm });
+        this.sounds.button = this.sound.add('button', { volume: audioConfig.button });
+        this.sounds.correct = this.sound.add('correct', { volume: audioConfig.correct });
+        this.sounds.pop = this.sound.add('pop', { volume: audioConfig.pop });
+        this.sounds.shop = this.sound.add('shop', { volume: audioConfig.shop });
 
         // Start background music
         this.sounds.bgm.play();
