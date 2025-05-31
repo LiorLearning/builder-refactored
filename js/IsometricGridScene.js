@@ -108,6 +108,9 @@ class IsometricGridScene extends Phaser.Scene {
         iconKeys.forEach(key => {
             this.spriteCounters.set(key, this.spriteInitialCounts[key]); // Use individual initial counts
         });
+
+        // Initialize delete zone
+        this.deleteZoneInstance = null;
     }
 
     // ===== PHASER LIFECYCLE =====
@@ -240,7 +243,7 @@ class IsometricGridScene extends Phaser.Scene {
         });
 
         // Create delete zone in bottom right corner
-        this.createDeleteZone();
+        this.deleteZoneInstance = new DeleteZone(this);
 
         // Add developer mode key sequence handler
         this.input.keyboard.on('keydown', (event) => {
@@ -795,11 +798,11 @@ class IsometricGridScene extends Phaser.Scene {
                     }
                     
                     // Check if hovering over delete zone
-                    if (this.checkDeleteZoneHover(pointer)) {
-                        this.activateDeleteZone();
+                    if (this.deleteZoneInstance.checkHover(pointer)) {
+                        this.deleteZoneInstance.activate();
                         this.hoveredPlacementTiles = []; // Clear tile highlights when over delete zone
                     } else {
-                        this.deactivateDeleteZone();
+                        this.deleteZoneInstance.deactivate();
                         // Show tile highlights while dragging placed sprites
                         this.updateDragHoverTiles(item, pointer);
                     }
@@ -833,13 +836,13 @@ class IsometricGridScene extends Phaser.Scene {
     handlePlacedSpriteDragEnd(item, pointer) {
         // Clear hover tiles when drag ends
         this.hoveredPlacementTiles = [];
-        this.deactivateDeleteZone();
+        this.deleteZoneInstance.deactivate();
         
         // Check if dropped in delete zone
-        if (this.checkDeleteZoneHover(pointer)) {
-            this.deleteSprite(item);
-                return;
-            }
+        if (this.deleteZoneInstance.checkHover(pointer)) {
+            this.deleteZoneInstance.deleteItem(item);
+            return;
+        }
         
         const pointerWorld = this.getPointerWorldPositionForTileSelection(pointer);
         let closestTile = null;
