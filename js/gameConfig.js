@@ -116,7 +116,7 @@ const GameConfig = {
             tileSpan: 2,
             population: 40,       // 🏠 Population boost (EDIT THIS)
             price: 200,          // 💰 Shop price (EDIT THIS)
-            initialCount: 0      // 📦 Starting inventory (EDIT THIS)
+            initialCount: 30      // 📦 Starting inventory (EDIT THIS)
         },
         'temple-u1': {
             yOffset: 64 / 4 + 35, // Using tileSize value directly
@@ -124,7 +124,7 @@ const GameConfig = {
             tileSpan: 3,
             population: 70,      // 🏠 Population boost (EDIT THIS)
             price: 500,          // 💰 Shop price (EDIT THIS)
-            initialCount: 0,     // 📦 Starting inventory (available for purchase but locked until level 1)
+            initialCount: 20,     // 📦 Starting inventory (available for purchase but locked until level 1)
             requiresLevel: 1     // Level required to use this item
         }
     }

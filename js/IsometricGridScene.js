@@ -119,6 +119,9 @@ class IsometricGridScene extends Phaser.Scene {
         // Initialize properties from config first
         this.initializeFromConfig();
         
+        // Initialize MessagePopup system
+        this.messagePopup = new MessagePopup(this);
+        
         // Initialize audio
         const audioConfig = window.GameConfig?.audioVolumes || GameConfig.audioVolumes;
         this.sounds.bgm = this.sound.add('bgm', { loop: true, volume: audioConfig.bgm });
@@ -810,8 +813,8 @@ class IsometricGridScene extends Phaser.Scene {
                 this.draggedItem = null;
                 this.sortByIsometricDepth();
                 // Show second welcome message only once
-                if (this.welcomeChatbox && !this.secondWelcomeMessageShown) {
-                    this.welcomeChatbox.destroy();
+                if (this.messagePopup.hasPopup('welcome') && !this.secondWelcomeMessageShown) {
+                    this.messagePopup.destroyPopup('welcome');
                     this.showSecondWelcomeMessage();
                     this.secondWelcomeMessageShown = true;
                 }
@@ -1899,238 +1902,34 @@ class IsometricGridScene extends Phaser.Scene {
     }
 
     showMessage(text, color) {
-        const message = this.add.text(
-            this.cameras.main.width / 2,
-            this.cameras.main.height / 2 + 100,
-            text,
-            {
-                fontSize: '24px',
-                color: color,
-                align: 'center'
-            }
-        ).setOrigin(0.5);
-
-        this.time.delayedCall(2000, () => {
-            message.destroy();
-        });
+        return this.messagePopup.showSimpleMessage(text, color);
     }
 
     showWelcomeMessage() {
-        // Create chatbox container
-        this.welcomeChatbox = this.add.container(0, 0);
-        this.welcomeChatbox.setDepth(2000);
-
-        // Chatbox dimensions and position
-        const width = 400;
-        const height = 150;
-        const x = 200; // Position near pixie
-        const y = this.cameras.main.height - 250;
-
-        // Create chatbox background with gradient and kid-friendly styling
-        const bg = this.add.graphics();
-        
-        // Drop shadow effect
-        bg.fillStyle(0x000000, 0.3);
-        bg.fillRoundedRect(x + 4, y + 4, width, height, 20);
-        
-        // Main gradient background (purple to pink)
-        bg.fillGradientStyle(0x9B59B6, 0xE91E63, 0x3498DB, 0xF39C12, 1);
-        bg.fillRoundedRect(x, y, width, height, 20);
-        
-        // Inner highlight for depth
-        bg.fillGradientStyle(0xFFFFFF, 0xFFFFFF, 0xE8E8E8, 0xE8E8E8, 0.2);
-        bg.fillRoundedRect(x + 4, y + 4, width - 8, height - 8, 16);
-        
-        // Bright border with glow effect
-        bg.lineStyle(3, 0xFFFFFF, 0.9);
-        bg.strokeRoundedRect(x, y, width, height, 20);
-        
-        this.welcomeChatbox.add(bg);
-
-        // Add decorative stars
-        const star1 = this.add.text(x + 30, y + 20, '⭐', { fontSize: '20px' });
-        const star2 = this.add.text(x + width - 50, y + 25, '✨', { fontSize: '16px' });
-        const star3 = this.add.text(x + 50, y + height - 40, '🌟', { fontSize: '18px' });
-        this.welcomeChatbox.add(star1);
-        this.welcomeChatbox.add(star2);
-        this.welcomeChatbox.add(star3);
-        
-        // Add message text with better styling
-        const message = this.add.text(x + width/2, y + height/2, 
-            "Hey, I'm Link\nDrag and drop an item\nto the ground", {
-            fontSize: '22px',
-            color: '#FFFFFF',
-            fontStyle: 'bold',
-            align: 'center',
-            fontFamily: 'Comic Sans MS, cursive, sans-serif',
-            stroke: '#2C3E50',
-            strokeThickness: 3,
-            shadow: { offsetX: 2, offsetY: 2, color: '#000000', blur: 4, fill: true }
-        }).setOrigin(0.5);
-        this.welcomeChatbox.add(message);
-
-        // Add close button with better styling
-        const closeBtnBg = this.add.graphics();
-        closeBtnBg.fillStyle(0xFF6B6B, 1);
-        closeBtnBg.lineStyle(2, 0xFFFFFF, 1);
-        closeBtnBg.fillCircle(x + width - 25, y + 25, 15);
-        closeBtnBg.strokeCircle(x + width - 25, y + 25, 15);
-        this.welcomeChatbox.add(closeBtnBg);
-        
-        const closeBtn = this.add.text(x + width - 25, y + 25, '✕', {
-            fontSize: '20px',
-            color: '#FFFFFF',
-            fontStyle: 'bold',
-            fontFamily: 'Comic Sans MS, cursive, sans-serif'
-        }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-        
-        closeBtn.on('pointerdown', () => {
-            this.welcomeChatbox.destroy();
+        return this.messagePopup.showChatbox({
+            id: 'welcome',
+            text: "Hey, I'm Link\nDrag and drop an item\nto the ground",
+            theme: 'welcome',
+            decorations: [
+                { emoji: '⭐', x: 30, y: 20, size: '20px' },
+                { emoji: '✨', x: 350, y: 25, size: '16px' },
+                { emoji: '🌟', x: 50, y: 110, size: '18px' }
+            ]
         });
-        
-        // Add hover effect to close button
-        closeBtn.on('pointerover', () => {
-            closeBtnBg.clear();
-            closeBtnBg.fillStyle(0xFF4757, 1);
-            closeBtnBg.lineStyle(2, 0xFFFFFF, 1);
-            closeBtnBg.fillCircle(x + width - 25, y + 25, 15);
-            closeBtnBg.strokeCircle(x + width - 25, y + 25, 15);
-        });
-        
-        closeBtn.on('pointerout', () => {
-            closeBtnBg.clear();
-            closeBtnBg.fillStyle(0xFF6B6B, 1);
-            closeBtnBg.lineStyle(2, 0xFFFFFF, 1);
-            closeBtnBg.fillCircle(x + width - 25, y + 25, 15);
-            closeBtnBg.strokeCircle(x + width - 25, y + 25, 15);
-        });
-        
-        this.welcomeChatbox.add(closeBtn);
-
-        // Add initial glow effect
-        this.addChatboxGlow(this.welcomeChatbox, x, y, width, height);
     }
 
     showSecondWelcomeMessage() {
-        // Create second chatbox container
-        this.welcomeChatbox = this.add.container(0, 0);
-        this.welcomeChatbox.setDepth(2000);
-
-        // Chatbox dimensions and position
-        const width = 400;
-        const height = 150;
-        const x = 200; // Position near pixie
-        const y = this.cameras.main.height - 250;
-
-        // Create chatbox background with gradient and kid-friendly styling
-        const bg = this.add.graphics();
-        
-        // Drop shadow effect
-        bg.fillStyle(0x000000, 0.3);
-        bg.fillRoundedRect(x + 4, y + 4, width, height, 20);
-        
-        // Main gradient background (green to blue for success/progress)
-        bg.fillGradientStyle(0x2ECC71, 0x27AE60, 0x3498DB, 0x2980B9, 1);
-        bg.fillRoundedRect(x, y, width, height, 20);
-        
-        // Inner highlight for depth
-        bg.fillGradientStyle(0xFFFFFF, 0xFFFFFF, 0xE8E8E8, 0xE8E8E8, 0.2);
-        bg.fillRoundedRect(x + 4, y + 4, width - 8, height - 8, 16);
-        
-        // Bright border with glow effect
-        bg.lineStyle(3, 0xFFFFFF, 0.9);
-        bg.strokeRoundedRect(x, y, width, height, 20);
-        
-        this.welcomeChatbox.add(bg);
-
-        // Add decorative elements for garden theme
-        const plant1 = this.add.text(x + 30, y + 20, '🌱', { fontSize: '20px' });
-        const plant2 = this.add.text(x + width - 50, y + 25, '🌸', { fontSize: '18px' });
-        const plant3 = this.add.text(x + 50, y + height - 40, '🌿', { fontSize: '16px' });
-        const sparkle = this.add.text(x + width - 70, y + height - 35, '✨', { fontSize: '16px' });
-        this.welcomeChatbox.add(plant1);
-        this.welcomeChatbox.add(plant2);
-        this.welcomeChatbox.add(plant3);
-        this.welcomeChatbox.add(sparkle);
-        
-        // Add message text with better styling
-        const message = this.add.text(x + width/2, y + height/2, 
-            "Now create your own dragon city!", {
-            fontSize: '24px',
-            color: '#FFFFFF',
-            fontStyle: 'bold',
-            align: 'center',
-            fontFamily: 'Comic Sans MS, cursive, sans-serif',
-            stroke: '#2C3E50',
-            strokeThickness: 3,
-            shadow: { offsetX: 2, offsetY: 2, color: '#000000', blur: 4, fill: true }
-        }).setOrigin(0.5);
-        this.welcomeChatbox.add(message);
-
-        // Add close button with better styling
-        const closeBtnBg = this.add.graphics();
-        closeBtnBg.fillStyle(0xFF6B6B, 1);
-        closeBtnBg.lineStyle(2, 0xFFFFFF, 1);
-        closeBtnBg.fillCircle(x + width - 25, y + 25, 15);
-        closeBtnBg.strokeCircle(x + width - 25, y + 25, 15);
-        this.welcomeChatbox.add(closeBtnBg);
-        
-        const closeBtn = this.add.text(x + width - 25, y + 25, '✕', {
-            fontSize: '20px',
-            color: '#FFFFFF',
-            fontStyle: 'bold',
-            fontFamily: 'Comic Sans MS, cursive, sans-serif'
-        }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-        
-        closeBtn.on('pointerdown', () => {
-            // Cancel the auto-destroy timer when manually closed
-            if (this.secondWelcomeMessageTimer) {
-                this.secondWelcomeMessageTimer.remove();
-                this.secondWelcomeMessageTimer = null;
-            }
-            this.welcomeChatbox.destroy();
-            this.welcomeChatbox = null;
-        });
-        
-        // Add hover effect to close button
-        closeBtn.on('pointerover', () => {
-            closeBtnBg.clear();
-            closeBtnBg.fillStyle(0xFF4757, 1);
-            closeBtnBg.lineStyle(2, 0xFFFFFF, 1);
-            closeBtnBg.fillCircle(x + width - 25, y + 25, 15);
-            closeBtnBg.strokeCircle(x + width - 25, y + 25, 15);
-        });
-        
-        closeBtn.on('pointerout', () => {
-            closeBtnBg.clear();
-            closeBtnBg.fillStyle(0xFF6B6B, 1);
-            closeBtnBg.lineStyle(2, 0xFFFFFF, 1);
-            closeBtnBg.fillCircle(x + width - 25, y + 25, 15);
-            closeBtnBg.strokeCircle(x + width - 25, y + 25, 15);
-        });
-        
-        this.welcomeChatbox.add(closeBtn);
-
-        // Add entrance animation
-        this.welcomeChatbox.setScale(0);
-        this.tweens.add({
-            targets: this.welcomeChatbox,
-            scaleX: 1,
-            scaleY: 1,
-            duration: 400,
-            ease: 'Back.easeOut',
-            onComplete: () => {
-                // Add enhanced glow effect for the new message
-                this.addEnhancedChatboxGlow(this.welcomeChatbox, x, y, width, height);
-            }
-        });
-
-        // Auto-destroy after 10 seconds of inactivity
-        this.secondWelcomeMessageTimer = this.time.delayedCall(10000, () => {
-            if (this.welcomeChatbox && this.welcomeChatbox.active) {
-                this.welcomeChatbox.destroy();
-                this.welcomeChatbox = null;
-            }
+        return this.messagePopup.showChatbox({
+            id: 'secondWelcome',
+            text: "Now create your own dragon city!",
+            theme: 'success',
+            decorations: [
+                { emoji: '🌱', x: 30, y: 20, size: '20px' },
+                { emoji: '🌸', x: 350, y: 25, size: '18px' },
+                { emoji: '🌿', x: 50, y: 115, size: '16px' },
+                { emoji: '✨', x: 330, y: 115, size: '16px' }
+            ],
+            autoClose: 10000
         });
     }
 
@@ -2257,106 +2056,16 @@ class IsometricGridScene extends Phaser.Scene {
 
     showFirstZeroAssetMessage() {
         console.log('Creating chatbox');
-        // Create chatbox container
-        const chatbox = this.add.container(0, 0);
-        chatbox.setDepth(2000);
-
-        // Chatbox dimensions and position
-        const width = 400;
-        const height = 150;
-        const x = 200; // Position near pixie
-        const y = this.cameras.main.height - 250;
-
-        console.log('Chatbox position:', x, y);
-
-        // Create chatbox background with gradient and kid-friendly styling
-        const bg = this.add.graphics();
-        
-        // Drop shadow effect
-        bg.fillStyle(0x000000, 0.3);
-        bg.fillRoundedRect(x + 4, y + 4, width, height, 20);
-        
-        // Main gradient background (orange to yellow for alert)
-        bg.fillGradientStyle(0xF39C12, 0xE67E22, 0xF1C40F, 0xE74C3C, 1);
-        bg.fillRoundedRect(x, y, width, height, 20);
-        
-        // Inner highlight for depth
-        bg.fillGradientStyle(0xFFFFFF, 0xFFFFFF, 0xE8E8E8, 0xE8E8E8, 0.2);
-        bg.fillRoundedRect(x + 4, y + 4, width - 8, height - 8, 16);
-        
-        // Bright border with glow effect
-        bg.lineStyle(3, 0xFFFFFF, 0.9);
-        bg.strokeRoundedRect(x, y, width, height, 20);
-        
-        chatbox.add(bg);
-
-        // Add decorative icons
-        const coin1 = this.add.text(x + 25, y + 15, '🪙', { fontSize: '18px' });
-        const coin2 = this.add.text(x + width - 45, y + 20, '💰', { fontSize: '16px' });
-        const shopping = this.add.text(x + 40, y + height - 35, '🛒', { fontSize: '16px' });
-        chatbox.add(coin1);
-        chatbox.add(coin2);
-        chatbox.add(shopping);
-        
-        // Add message text with better styling
-        const message = this.add.text(x + width/2, y + height/2, 
-            "Press Spacebar to collect coins\nand buy more assets", {
-            fontSize: '20px',
-            color: '#FFFFFF',
-            fontStyle: 'bold',
-            align: 'center',
-            fontFamily: 'Comic Sans MS, cursive, sans-serif',
-            stroke: '#2C3E50',
-            strokeThickness: 3,
-            shadow: { offsetX: 2, offsetY: 2, color: '#000000', blur: 4, fill: true }
-        }).setOrigin(0.5);
-        chatbox.add(message);
-
-        // Add close button with better styling
-        const closeBtnBg = this.add.graphics();
-        closeBtnBg.fillStyle(0xFF6B6B, 1);
-        closeBtnBg.lineStyle(2, 0xFFFFFF, 1);
-        closeBtnBg.fillCircle(x + width - 25, y + 25, 15);
-        closeBtnBg.strokeCircle(x + width - 25, y + 25, 15);
-        chatbox.add(closeBtnBg);
-        
-        const closeBtn = this.add.text(x + width - 25, y + 25, '✕', {
-            fontSize: '20px',
-            color: '#FFFFFF',
-            fontStyle: 'bold',
-            fontFamily: 'Comic Sans MS, cursive, sans-serif'
-        }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-        
-        closeBtn.on('pointerdown', () => {
-            console.log('Closing chatbox');
-            chatbox.destroy();
-        });
-        
-        // Add hover effect to close button
-        closeBtn.on('pointerover', () => {
-            closeBtnBg.clear();
-            closeBtnBg.fillStyle(0xFF4757, 1);
-            closeBtnBg.lineStyle(2, 0xFFFFFF, 1);
-            closeBtnBg.fillCircle(x + width - 25, y + 25, 15);
-            closeBtnBg.strokeCircle(x + width - 25, y + 25, 15);
-        });
-        
-        closeBtn.on('pointerout', () => {
-            closeBtnBg.clear();
-            closeBtnBg.fillStyle(0xFF6B6B, 1);
-            closeBtnBg.lineStyle(2, 0xFFFFFF, 1);
-            closeBtnBg.fillCircle(x + width - 25, y + 25, 15);
-            closeBtnBg.strokeCircle(x + width - 25, y + 25, 15);
-        });
-        
-        chatbox.add(closeBtn);
-
-        // Auto-destroy after 10 seconds
-        this.time.delayedCall(10000, () => {
-            if (chatbox.active) {
-                console.log('Auto-destroying chatbox');
-                chatbox.destroy();
-            }
+        return this.messagePopup.showChatbox({
+            id: 'firstZeroAsset',
+            text: "Press Spacebar to collect coins\nand buy more assets",
+            theme: 'alert',
+            decorations: [
+                { emoji: '🪙', x: 25, y: 15, size: '18px' },
+                { emoji: '💰', x: 355, y: 20, size: '16px' },
+                { emoji: '🛒', x: 40, y: 115, size: '16px' }
+            ],
+            autoClose: 10000
         });
     }
 
@@ -2984,152 +2693,46 @@ class IsometricGridScene extends Phaser.Scene {
     }
     
     showLevelUpMessage() {
-        // Create a container for the level up dialog
-        const dialogWidth = 400;
-        const dialogHeight = 350;
-        const dialogX = this.cameras.main.width / 2;
-        const dialogY = this.cameras.main.height / 2;
-        
-        // Create dialog background
-        const dialogBg = this.add.graphics();
-        dialogBg.fillStyle(0x2C3E50, 0.95);
-        dialogBg.fillRoundedRect(dialogX - dialogWidth/2, dialogY - dialogHeight/2, dialogWidth, dialogHeight, 20);
-        dialogBg.lineStyle(4, 0xFFD700, 1);
-        dialogBg.strokeRoundedRect(dialogX - dialogWidth/2, dialogY - dialogHeight/2, dialogWidth, dialogHeight, 20);
-        dialogBg.setDepth(3000);
-        
-        // Title
-        const titleText = this.add.text(dialogX, dialogY - dialogHeight/2 + 40, '🎉 LEVEL UP! 🎉', {
-            fontSize: '32px',
-            color: '#FFD700',
-            fontStyle: 'bold',
-            fontFamily: 'Comic Sans MS, cursive, sans-serif',
-            align: 'center'
-        }).setOrigin(0.5).setDepth(3001);
-        
-        // Subtitle
-        const subtitleText = this.add.text(dialogX, dialogY - dialogHeight/2 + 80, 'New Buildings Unlocked!', {
-            fontSize: '18px',
-            color: '#ECF0F1',
-            fontFamily: 'Comic Sans MS, cursive, sans-serif',
-            align: 'center'
-        }).setOrigin(0.5).setDepth(3001);
-        
-        // Get unlocked items
-        const unlockedItems = ['hut-u1', 'shrine-u1', 'temple-u1'];
-        const startY = dialogY - 50;
-        
-        // Create container for all dialog elements
-        const dialogContainer = this.add.container(0, 0);
-        dialogContainer.add([dialogBg, titleText, subtitleText]);
-        dialogContainer.setDepth(3000);
-        
-        // Show each unlocked item with image
-        unlockedItems.forEach((itemKey, index) => {
-            const config = this.assetConfig[itemKey];
-            const itemY = startY + (index * 80);
-            
-            // Item background
-            const itemBg = this.add.graphics();
-            itemBg.fillStyle(0x34495E, 0.8);
-            itemBg.fillRoundedRect(dialogX - 180, itemY - 25, 360, 60, 10);
-            itemBg.lineStyle(2, 0x52C4B0, 0.8);
-            itemBg.strokeRoundedRect(dialogX - 180, itemY - 25, 360, 60, 10);
-            itemBg.setDepth(3001);
-            dialogContainer.add(itemBg);
-            
-            // Item image
-            const itemImage = this.add.image(dialogX - 140, itemY, itemKey);
-            const imageScale = 40 / Math.max(itemImage.width, itemImage.height);
-            itemImage.setScale(imageScale);
-            itemImage.setDepth(3002);
-            dialogContainer.add(itemImage);
-            
-            // Item name
-            const itemName = itemKey === 'hut-u1' ? 'Upgraded Hut' : 
-                           itemKey === 'shrine-u1' ? 'Legendary Shrine' : 
-                           'Legendary Temple';
-            const nameText = this.add.text(dialogX - 80, itemY - 15, itemName, {
-                fontSize: '16px',
-                color: '#ECF0F1',
-                fontStyle: 'bold',
-                fontFamily: 'Arial, sans-serif'
-            }).setOrigin(0, 0).setDepth(3002);
-            dialogContainer.add(nameText);
-            
-            // Population boost
-            const populationText = this.add.text(dialogX - 80, itemY + 5, `Population: +${config.population}`, {
-                fontSize: '14px',
-                color: '#52C4B0',
-                fontFamily: 'Arial, sans-serif'
-            }).setOrigin(0, 0).setDepth(3002);
-            dialogContainer.add(populationText);
-            
-            // Cost
-            const costText = this.add.text(dialogX + 60, itemY - 5, `💰 ${config.price}`, {
-                fontSize: '16px',
-                color: '#F39C12',
-                fontStyle: 'bold',
-                fontFamily: 'Arial, sans-serif'
-            }).setOrigin(0, 0).setDepth(3002);
-            dialogContainer.add(costText);
-        });
-        
-        // Bottom message
-        const bottomText = this.add.text(dialogX, dialogY + dialogHeight/2 - 40, 'Purchase them from the shop! 🛒\nPopulation bar extended to 600! 📊', {
-            fontSize: '16px',
-            color: '#BDC3C7',
-            fontFamily: 'Comic Sans MS, cursive, sans-serif',
-            align: 'center'
-        }).setOrigin(0.5).setDepth(3001);
-        dialogContainer.add(bottomText);
-        
-        // Add celebratory animation
-        dialogContainer.setScale(0);
-        this.tweens.add({
-            targets: dialogContainer,
-            scaleX: 1.1,
-            scaleY: 1.1,
-            duration: 500,
-            ease: 'Back.easeOut',
-            onComplete: () => {
-                this.tweens.add({
-                    targets: dialogContainer,
-                    scaleX: 1,
-                    scaleY: 1,
-                    duration: 200,
-                    ease: 'Power2'
-                });
-            }
-        });
-        
-        // Add pulsing effect to title
-        this.tweens.add({
-            targets: titleText,
-            alpha: 0.8,
-            duration: 1000,
-            yoyo: true,
-            repeat: 3,
-            ease: 'Sine.easeInOut'
-        });
-        
-        // Remove dialog after delay
-        this.time.delayedCall(6000, () => {
-            this.tweens.add({
-                targets: dialogContainer,
-                alpha: 0,
-                scaleX: 0,
-                scaleY: 0,
-                duration: 500,
-                ease: 'Power2',
-                onComplete: () => {
-                    dialogContainer.destroy();
+        return this.messagePopup.showDialog({
+            id: 'levelUp',
+            title: '🎉 LEVEL UP! 🎉',
+            width: 400,
+            height: 350,
+            theme: 'levelup',
+            content: [
+                {
+                    type: 'text',
+                    text: 'New Buildings Unlocked!',
+                    offsetY: -80,
+                    fontSize: '18px',
+                    color: '#ECF0F1'
+                },
+                {
+                    type: 'text',
+                    text: '• Upgraded Hut (+15 population)\n• Legendary Shrine (+50 population)\n• Legendary Temple (+100 population)',
+                    offsetY: -20,
+                    fontSize: '16px',
+                    color: '#52C4B0',
+                    align: 'left'
+                },
+                {
+                    type: 'text',
+                    text: 'Purchase them from the shop! 🛒\nPopulation bar extended to 600! 📊',
+                    offsetY: 80,
+                    fontSize: '16px',
+                    color: '#BDC3C7'
                 }
-            });
+            ],
+            animations: {
+                entranceScale: 1.1,
+                pulse: {
+                    alpha: 0.8,
+                    duration: 1000,
+                    repeat: 3
+                }
+            },
+            autoClose: 6000
         });
-        
-        // Play celebration sound
-        this.sounds.correct.play();
     }
 
     // Improved depth sorting for isometric view
@@ -3205,141 +2808,66 @@ class IsometricGridScene extends Phaser.Scene {
     }
     
     showLevel2CompletionMessage() {
-        // Create a container for the completion dialog
-        const dialogWidth = 500;
-        const dialogHeight = 400;
-        const dialogX = this.cameras.main.width / 2;
-        const dialogY = this.cameras.main.height / 2;
-        
-        // Create dialog background with special styling for completion
-        const dialogBg = this.add.graphics();
-        dialogBg.fillGradientStyle(0x8E44AD, 0x3498DB, 0x1ABC9C, 0xF39C12, 0.95);
-        dialogBg.fillRoundedRect(dialogX - dialogWidth/2, dialogY - dialogHeight/2, dialogWidth, dialogHeight, 25);
-        dialogBg.lineStyle(5, 0xFFD700, 1);
-        dialogBg.strokeRoundedRect(dialogX - dialogWidth/2, dialogY - dialogHeight/2, dialogWidth, dialogHeight, 25);
-        dialogBg.setDepth(3000);
-        
-        // Add a glow effect
-        const glowBg = this.add.graphics();
-        glowBg.fillStyle(0xFFD700, 0.3);
-        glowBg.fillRoundedRect(dialogX - dialogWidth/2 - 10, dialogY - dialogHeight/2 - 10, dialogWidth + 20, dialogHeight + 20, 30);
-        glowBg.setDepth(2999);
-        
-        // Title
-        const titleText = this.add.text(dialogX, dialogY - dialogHeight/2 + 50, '🏆 LEVEL 2 COMPLETE! 🏆', {
-            fontSize: '36px',
-            color: '#FFD700',
-            fontStyle: 'bold',
-            fontFamily: 'Comic Sans MS, cursive, sans-serif',
-            align: 'center',
-            stroke: '#2C3E50',
-            strokeThickness: 4
-        }).setOrigin(0.5).setDepth(3001);
-        
-        // Subtitle
-        const subtitleText = this.add.text(dialogX, dialogY - dialogHeight/2 + 100, 'MAXIMUM POPULATION ACHIEVED!', {
-            fontSize: '20px',
-            color: '#FFFFFF',
-            fontStyle: 'bold',
-            fontFamily: 'Comic Sans MS, cursive, sans-serif',
-            align: 'center',
-            stroke: '#2C3E50',
-            strokeThickness: 2
-        }).setOrigin(0.5).setDepth(3001);
-        
-        // Achievement details
-        const achievementText = this.add.text(dialogX, dialogY - 50, '✨ ALL BUILDINGS UNLOCKED ✨\n🌟 POPULATION: 600/600 🌟\n🎯 CITY MASTERY COMPLETE 🎯', {
-            fontSize: '18px',
-            color: '#ECF0F1',
-            fontFamily: 'Comic Sans MS, cursive, sans-serif',
-            align: 'center',
-            stroke: '#2C3E50',
-            strokeThickness: 2
-        }).setOrigin(0.5).setDepth(3001);
-        
-        // Congratulations message
-        const congratsText = this.add.text(dialogX, dialogY + 50, 'Congratulations, Master Builder!\nYou have created the ultimate city!', {
-            fontSize: '16px',
-            color: '#BDC3C7',
-            fontFamily: 'Comic Sans MS, cursive, sans-serif',
-            align: 'center',
-            fontStyle: 'italic'
-        }).setOrigin(0.5).setDepth(3001);
-        
-        // Final message
-        const finalText = this.add.text(dialogX, dialogY + dialogHeight/2 - 50, '🎊 Continue building and exploring! 🎊', {
-            fontSize: '18px',
-            color: '#F39C12',
-            fontFamily: 'Comic Sans MS, cursive, sans-serif',
-            align: 'center',
-            fontStyle: 'bold'
-        }).setOrigin(0.5).setDepth(3001);
-        
-        // Create container for all dialog elements
-        const dialogContainer = this.add.container(0, 0);
-        dialogContainer.add([glowBg, dialogBg, titleText, subtitleText, achievementText, congratsText, finalText]);
-        dialogContainer.setDepth(3000);
-        
-        // Add epic celebratory animation
-        dialogContainer.setScale(0);
-        this.tweens.add({
-            targets: dialogContainer,
-            scaleX: 1.2,
-            scaleY: 1.2,
-            duration: 800,
-            ease: 'Back.easeOut',
-            onComplete: () => {
-                this.tweens.add({
-                    targets: dialogContainer,
-                    scaleX: 1,
-                    scaleY: 1,
-                    duration: 300,
-                    ease: 'Power2'
-                });
-            }
-        });
-        
-        // Add rainbow pulsing effect to title
-        this.tweens.add({
-            targets: titleText,
-            scaleX: 1.1,
-            scaleY: 1.1,
-            duration: 1000,
-            yoyo: true,
-            repeat: -1,
-            ease: 'Sine.easeInOut'
-        });
-        
-        // Add floating effect to achievement text
-        this.tweens.add({
-            targets: achievementText,
-            y: achievementText.y - 10,
-            duration: 2000,
-            yoyo: true,
-            repeat: -1,
-            ease: 'Sine.easeInOut'
-        });
-        
-        // Remove dialog after extended delay (longer for such an achievement)
-        this.time.delayedCall(10000, () => {
-            this.tweens.add({
-                targets: dialogContainer,
-                alpha: 0,
-                scaleX: 0,
-                scaleY: 0,
-                duration: 1000,
-                ease: 'Power2',
-                onComplete: () => {
-                    dialogContainer.destroy();
-                }
-            });
-        });
-        
-        // Play epic celebration sound (use correct sound)
+        // Play epic celebration sound
         this.sounds.correct.play();
         
         // Add screen particles effect
         this.createLevel2ParticleEffect();
+        
+        return this.messagePopup.showDialog({
+            id: 'level2Completion',
+            title: '🏆 LEVEL 2 COMPLETE! 🏆',
+            width: 500,
+            height: 400,
+            theme: 'completion',
+            content: [
+                {
+                    type: 'text',
+                    text: 'MAXIMUM POPULATION ACHIEVED!',
+                    offsetY: -150,
+                    fontSize: '20px',
+                    fontStyle: 'bold',
+                    strokeThickness: 2,
+                    align: 'center'
+                },
+                {
+                    type: 'text',
+                    text: '✨ ALL BUILDINGS UNLOCKED ✨\n🌟 POPULATION: 600/600 🌟\n🎯 CITY MASTERY COMPLETE 🎯',
+                    offsetY: -50,
+                    fontSize: '18px',
+                    strokeThickness: 2,
+                    align: 'center'
+                },
+                {
+                    type: 'text',
+                    text: 'Congratulations, Master Builder!\nYou have created the ultimate city!',
+                    offsetY: 50,
+                    fontSize: '16px',
+                    color: '#BDC3C7',
+                    fontStyle: 'italic',
+                    align: 'center'
+                },
+                {
+                    type: 'text',
+                    text: '🎊 Continue building and exploring! 🎊',
+                    offsetY: 150,
+                    fontSize: '18px',
+                    color: '#F39C12',
+                    fontStyle: 'bold',
+                    align: 'center'
+                }
+            ],
+            animations: {
+                entranceScale: 1.2,
+                entranceDuration: 800,
+                pulse: {
+                    alpha: 0.8,
+                    duration: 1000,
+                    repeat: -1
+                }
+            },
+            autoClose: 10000
+        });
     }
     
     createLevel2ParticleEffect() {
